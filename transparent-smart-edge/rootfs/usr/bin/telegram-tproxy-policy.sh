@@ -4,7 +4,8 @@ port="${1:?usage: telegram-tproxy-policy.sh PORT [--apply|--rollback|--check]}"
 mode="${2:---check}"
 apply() {
   nft delete table inet telegram_transparent 2>/dev/null || true
-  ip rule replace priority 1000 fwmark 0x1/0xff table 100
+  ip rule del priority 1000 fwmark 0x1/0xff table 100 2>/dev/null || true
+  ip rule add priority 1000 fwmark 0x1/0xff table 100
   ip route replace local 0.0.0.0/0 dev lo table 100
   nft -f - <<EOF
 table inet telegram_transparent {
