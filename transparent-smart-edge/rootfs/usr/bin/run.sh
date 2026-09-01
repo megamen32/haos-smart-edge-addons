@@ -58,7 +58,7 @@ fi
 singbox_enabled=0
 if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
     jq --argjson enabled "$([[ "$TELEGRAM_TPROXY_ENABLED" == true ]] && echo true || echo false)" --argjson port "$TELEGRAM_TPROXY_PORT" '
-      if $enabled then .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$port,network:"tcp"}] else . end' \
+      if $enabled then .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$port}] else . end' \
       "$SINGBOX_CONFIG_PATH" >"$SINGBOX_RUNTIME_PATH.tmp"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
@@ -112,7 +112,6 @@ fi
 smart_edge_pid="$!"
 
 cleanup() {
-    if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then /usr/bin/telegram-tproxy-policy.sh "$TELEGRAM_TPROXY_PORT" --rollback; fi
     local pids=("$smartdns_pid" "$smart_edge_pid")
     if [[ -n "$singbox_pid" ]]; then
         pids+=("$singbox_pid")
