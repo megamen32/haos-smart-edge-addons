@@ -1,0 +1,35 @@
+name: "Bezrabotnyi Transparent Smart Edge"
+version: "0.1.0"
+slug: bezrabotnyi_transparent_smart_edge
+description: "Supervisor-managed VPN Panel SmartDNS, sing-box, and transparent TLS edge"
+url: "https://github.com/megamen32/haos-smart-edge-addons/tree/main/transparent-smart-edge"
+arch:
+  - aarch64
+startup: services
+boot: auto
+init: false
+host_network: true
+
+options:
+  dns_listen_host: "0.0.0.0"
+  dns_port: 1053
+  doh_port: 18053
+  edge_listen_host: "0.0.0.0"
+  edge_port: 10443
+  edge_ipv4: "192.168.2.1"
+  singbox_internal_port: 13128
+  singbox_outbound_tag: "de-cdn"
+  require_singbox_config: false
+schema:
+  dns_listen_host: "str"
+  dns_port: "int(1,65535)"
+  doh_port: "int(1,65535)"
+  edge_listen_host: "str"
+  edge_port: "int(1,65535)"
+  edge_ipv4: "str"
+  singbox_internal_port: "int(1,65535)"
+  singbox_outbound_tag: "str"
+  require_singbox_config: "bool"
+
+panel_icon: "mdi:shield-link-variant"
+image: "ghcr.io/megamen32/haos-smart-edge"
