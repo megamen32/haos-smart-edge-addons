@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 go install -trimpath -tags with_utls \
 
 FROM ${BUILD_FROM}
 
-RUN apk add --no-cache bash jq netcat-openbsd
+RUN apk add --no-cache bash iproute2 jq netcat-openbsd nftables
 
 COPY --from=builder /out/smartdns /usr/bin/smartdns
 COPY --from=builder /out/smart-edge /usr/bin/smart-edge
@@ -34,7 +34,8 @@ COPY rootfs /
 
 RUN chmod 0755 /usr/bin/smartdns /usr/bin/smart-edge /usr/bin/sing-box \
       /usr/bin/run.sh /usr/bin/healthcheck.sh \
-      /usr/bin/prepare-singbox-config.sh /usr/bin/validate-singbox-config.sh
+      /usr/bin/prepare-singbox-config.sh /usr/bin/validate-singbox-config.sh \
+      /usr/bin/telegram-tproxy-policy.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/usr/bin/healthcheck.sh"]
 

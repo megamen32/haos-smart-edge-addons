@@ -7,6 +7,7 @@ CONFIG_PATH=/data/config.json
 RUNTIME_CONFIG_PATH=/data/runtime-config.json
 DEFAULT_CONFIG_PATH=/etc/transparent-smart-edge/config.default.json
 SINGBOX_CONFIG_PATH=/data/singbox.json
+SINGBOX_RUNTIME_PATH=/data/singbox-runtime.json
 
 option() {
     local key="$1"
@@ -40,11 +41,14 @@ EDGE_IPV4="$(option edge_ipv4 192.168.2.1)"
 SINGBOX_INTERNAL_PORT="$(option singbox_internal_port 13128)"
 SINGBOX_OUTBOUND_TAG="$(option singbox_outbound_tag de-cdn)"
 REQUIRE_SINGBOX_CONFIG="$(option require_singbox_config false)"
+TELEGRAM_TPROXY_ENABLED="$(option telegram_tproxy_enabled false)"
+TELEGRAM_TPROXY_PORT="$(option telegram_tproxy_port 12555)"
 
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
 require_port edge_port "$EDGE_PORT"
 require_port singbox_internal_port "$SINGBOX_INTERNAL_PORT"
+require_port telegram_tproxy_port "$TELEGRAM_TPROXY_PORT"
 
 if ! /usr/bin/sing-box version 2>/dev/null | grep -Fq 'sing-box version 1.13.14'; then
     printf 'bundled sing-box is not version 1.13.14\n' >&2
@@ -53,7 +57,12 @@ fi
 
 singbox_enabled=0
 if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_CONFIG_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG"
+    jq --argjson enabled "$([[ "$TELEGRAM_TPROXY_ENABLED" == true ]] && echo true || echo false)" --argjson port "$TELEGRAM_TPROXY_PORT" '
+      if $enabled then .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$port,network:"tcp"}] else . end' \
+      "$SINGBOX_CONFIG_PATH" >"$SINGBOX_RUNTIME_PATH.tmp"
+    chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
+    mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2
@@ -96,13 +105,14 @@ export PROXY_PORT="$SINGBOX_INTERNAL_PORT"
 smartdns_pid="$!"
 singbox_pid=""
 if [[ "$singbox_enabled" == 1 ]]; then
-    /usr/bin/sing-box run -c "$SINGBOX_CONFIG_PATH" &
+    /usr/bin/sing-box run -c "$SINGBOX_RUNTIME_PATH" &
     singbox_pid="$!"
 fi
 /usr/bin/smart-edge &
 smart_edge_pid="$!"
 
 cleanup() {
+    if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then /usr/bin/telegram-tproxy-policy.sh "$TELEGRAM_TPROXY_PORT" --rollback; fi
     local pids=("$smartdns_pid" "$smart_edge_pid")
     if [[ -n "$singbox_pid" ]]; then
         pids+=("$singbox_pid")
@@ -111,6 +121,10 @@ cleanup() {
     wait "${pids[@]}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
+
+if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then
+    /usr/bin/telegram-tproxy-policy.sh "$TELEGRAM_TPROXY_PORT" --apply
+fi
 
 ready=0
 for _ in $(seq 1 50); do
