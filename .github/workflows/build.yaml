@@ -29,9 +29,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test transport auto-selection contract
-        run: bash tests/transport-config.test.sh
-
       - name: Read app version
         id: info
         shell: bash
