@@ -1,5 +1,5 @@
 name: "Bezrabotnyi Transparent Smart Edge"
-version: "0.1.5"
+version: "0.1.6"
 slug: bezrabotnyi_transparent_smart_edge
 description: "Supervisor-managed VPN Panel SmartDNS, sing-box, and transparent TLS edge"
 url: "https://github.com/megamen32/haos-smart-edge-addons/tree/main/transparent-smart-edge"
@@ -20,7 +20,8 @@ options:
   edge_port: 10443
   edge_ipv4: "192.168.2.1"
   singbox_internal_port: 13128
-  singbox_outbound_tag: "de-cdn"
+  singbox_outbound_tag: "de-regional"
+  telegram_outbound_tag: "us-regional"
   require_singbox_config: false
   telegram_tproxy_enabled: false
   telegram_tproxy_port: 12555
@@ -33,6 +34,7 @@ schema:
   edge_ipv4: "str"
   singbox_internal_port: "int(1,65535)"
   singbox_outbound_tag: "str"
+  telegram_outbound_tag: "str"
   require_singbox_config: "bool"
   telegram_tproxy_enabled: "bool"
   telegram_tproxy_port: "int(1,65535)"

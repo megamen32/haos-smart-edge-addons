@@ -13,10 +13,11 @@ durable policy.
 
 The transport is intentionally not bundled: `/data/singbox.json` must contain
 the real VLESS/TLS/uTLS/WebSocket outbound. To import the already-working
-`de-cdn` outbound from a server-44 config without printing its credentials:
+the existing DE and US `urltest` groups from a server-44 config without
+printing their credentials:
 
 ```bash
-/usr/bin/prepare-singbox-config.sh /data/server44-source.json de-cdn /data/singbox.json 13128
+/usr/bin/prepare-singbox-config.sh /data/server44-source.json de-regional /data/singbox.json 13128 us-regional
 ```
 
 The importer writes mode `0600` and runs `sing-box check` before replacing the

@@ -39,7 +39,8 @@ EDGE_LISTEN_HOST="$(option edge_listen_host 0.0.0.0)"
 EDGE_PORT="$(option edge_port 10443)"
 EDGE_IPV4="$(option edge_ipv4 192.168.2.1)"
 SINGBOX_INTERNAL_PORT="$(option singbox_internal_port 13128)"
-SINGBOX_OUTBOUND_TAG="$(option singbox_outbound_tag de-cdn)"
+SINGBOX_OUTBOUND_TAG="$(option singbox_outbound_tag de-regional)"
+TELEGRAM_OUTBOUND_TAG="$(option telegram_outbound_tag us-regional)"
 REQUIRE_SINGBOX_CONFIG="$(option require_singbox_config false)"
 TELEGRAM_TPROXY_ENABLED="$(option telegram_tproxy_enabled false)"
 TELEGRAM_TPROXY_PORT="$(option telegram_tproxy_port 12555)"
@@ -57,12 +58,15 @@ fi
 
 singbox_enabled=0
 if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
-    jq --argjson enabled "$([[ "$TELEGRAM_TPROXY_ENABLED" == true ]] && echo true || echo false)" --argjson port "$TELEGRAM_TPROXY_PORT" '
-      if $enabled then .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$port}] else . end' \
+    jq --argjson enabled "$([[ "$TELEGRAM_TPROXY_ENABLED" == true ]] && echo true || echo false)" --argjson port "$TELEGRAM_TPROXY_PORT" --arg telegram_outbound "$TELEGRAM_OUTBOUND_TAG" '
+      if $enabled then
+        .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy")) + [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$port}])
+        | .route.rules = ([{inbound:["telegram-tproxy"],outbound:$telegram_outbound}] + ((.route.rules // []) | map(select(((.inbound // []) | index("telegram-tproxy")) == null))))
+      else . end' \
       "$SINGBOX_CONFIG_PATH" >"$SINGBOX_RUNTIME_PATH.tmp"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2

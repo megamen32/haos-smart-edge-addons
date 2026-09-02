@@ -15,8 +15,9 @@ WORKDIR /build/smartedge
 COPY smartedge/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/smart-edge .
 
-# VLESS, TLS, and WebSocket are built into sing-box. uTLS is the only feature
-# used by the current server-44 de-cdn outbound that requires an explicit tag.
+# VLESS, TLS, WebSocket, HTTPUpgrade, and Reality are built into sing-box.
+# uTLS is the only feature used by the imported regional groups that needs an
+# explicit build tag.
 RUN CGO_ENABLED=0 go install -trimpath -tags with_utls \
       -ldflags "-X github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION} -s -w -buildid=" \
       "github.com/sagernet/sing-box/cmd/sing-box@v${SING_BOX_VERSION}" \
