@@ -47,6 +47,9 @@ TELEGRAM_TPROXY_PORT="$(option telegram_tproxy_port 12555)"
 LAN_US_PROXY_ENABLED="$(option lan_us_proxy_enabled true)"
 LAN_US_PROXY_PORT="$(option lan_us_proxy_port 3127)"
 LAN_US_PROXY_OUTBOUND_TAG="$(option lan_us_proxy_outbound_tag us-regional)"
+LAN_DE_PROXY_ENABLED="$(option lan_de_proxy_enabled true)"
+LAN_DE_PROXY_PORT="$(option lan_de_proxy_port 3128)"
+LAN_DE_PROXY_OUTBOUND_TAG="$(option lan_de_proxy_outbound_tag de-regional)"
 
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
@@ -54,6 +57,7 @@ require_port edge_port "$EDGE_PORT"
 require_port singbox_internal_port "$SINGBOX_INTERNAL_PORT"
 require_port telegram_tproxy_port "$TELEGRAM_TPROXY_PORT"
 require_port lan_us_proxy_port "$LAN_US_PROXY_PORT"
+require_port lan_de_proxy_port "$LAN_DE_PROXY_PORT"
 
 if ! /usr/bin/sing-box version 2>/dev/null | grep -Fq 'sing-box version 1.13.14'; then
     printf 'bundled sing-box is not version 1.13.14\n' >&2
@@ -65,10 +69,11 @@ if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
     /usr/bin/configure-runtime-inbounds.sh \
       "$SINGBOX_CONFIG_PATH" "$SINGBOX_RUNTIME_PATH.tmp" \
       "$TELEGRAM_TPROXY_ENABLED" "$TELEGRAM_TPROXY_PORT" "$TELEGRAM_OUTBOUND_TAG" \
-      "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG"
+      "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" \
+      "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2
