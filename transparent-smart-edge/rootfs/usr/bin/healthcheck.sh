@@ -17,6 +17,8 @@ option() {
 dns_port="$(option dns_port 1053)"
 edge_port="$(option edge_port 10443)"
 singbox_port="$(option singbox_internal_port 13128)"
+lan_us_enabled="$(option lan_us_proxy_enabled true)"
+lan_us_port="$(option lan_us_proxy_port 3127)"
 require_singbox_config="$(option require_singbox_config false)"
 singbox_config=/data/singbox.json
 
@@ -28,6 +30,9 @@ nc -z -w 2 127.0.0.1 "$edge_port"
 
 if [[ -s "$singbox_config" ]]; then
     nc -z -w 2 127.0.0.1 "$singbox_port"
+    if [[ "$lan_us_enabled" == true ]]; then
+        nc -z -w 2 127.0.0.1 "$lan_us_port"
+    fi
 elif [[ "$require_singbox_config" == true || "$dns_port" == 53 || "$edge_port" == 443 ]]; then
     printf 'sing-box transport is not configured\n' >&2
     exit 1

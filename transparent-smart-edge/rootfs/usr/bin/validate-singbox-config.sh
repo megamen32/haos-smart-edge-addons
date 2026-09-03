@@ -6,6 +6,9 @@ config_path="${1:-/data/singbox.json}"
 listen_port="${2:-13128}"
 outbound_tag="${3:-de-regional}"
 telegram_outbound_tag="${4:-us-regional}"
+lan_us_enabled="${5:-false}"
+lan_us_port="${6:-3127}"
+lan_us_outbound_tag="${7:-us-regional}"
 singbox_bin="${SING_BOX_BIN:-/usr/bin/sing-box}"
 
 if [[ ! -s "$config_path" ]]; then
@@ -17,6 +20,9 @@ if ! jq -e \
     --arg tag "$outbound_tag" \
     --arg telegram_tag "$telegram_outbound_tag" \
     --argjson port "$listen_port" \
+    --argjson lan_us_enabled "$lan_us_enabled" \
+    --argjson lan_us_port "$lan_us_port" \
+    --arg lan_us_tag "$lan_us_outbound_tag" \
     '. as $root
      | def by_tag($wanted): [$root.outbounds[]? | select(.tag == $wanted)];
      def valid_leaf:
@@ -46,6 +52,11 @@ if ! jq -e \
      and valid_target($tag)
      and .route.final == $tag
      and (if $telegram_tag == "" then true else valid_target($telegram_tag) end)
+     and (if $lan_us_enabled then
+            valid_target($lan_us_tag)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == $lan_us_port)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_us_tag and ((.inbound // []) | index("lan-us-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-us-http")] | length) == 0 end)
      and (if ([.inbounds[]? | select(.tag == "telegram-tproxy")] | length) == 0 then true
           else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1
           end)' \

@@ -36,6 +36,7 @@ COPY rootfs /
 RUN chmod 0755 /usr/bin/smartdns /usr/bin/smart-edge /usr/bin/sing-box \
       /usr/bin/run.sh /usr/bin/healthcheck.sh \
       /usr/bin/prepare-singbox-config.sh /usr/bin/validate-singbox-config.sh \
+      /usr/bin/configure-runtime-inbounds.sh \
       /usr/bin/telegram-tproxy-policy.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/usr/bin/healthcheck.sh"]

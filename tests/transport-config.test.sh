@@ -6,6 +6,7 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$repo_dir/.test-tmp/transport-config"
 importer="$repo_dir/transparent-smart-edge/rootfs/usr/bin/prepare-singbox-config.sh"
 validator="$repo_dir/transparent-smart-edge/rootfs/usr/bin/validate-singbox-config.sh"
+runtime_configurer="$repo_dir/transparent-smart-edge/rootfs/usr/bin/configure-runtime-inbounds.sh"
 
 rm -rf "$work_dir"
 mkdir -p "$work_dir"
@@ -41,12 +42,14 @@ jq -e '
   and ([.outbounds[] | select(.tag == "us-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
 ' "$work_dir/generated.json" >/dev/null
 
-jq '
-  .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:12555}]
-  | .route.rules = [{inbound:["telegram-tproxy"],outbound:"us-regional"}]
-' "$work_dir/generated.json" >"$work_dir/runtime.json"
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional
+  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional
+
+jq -e '
+  ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("lan-us-http")))] | length) == 1
+' "$work_dir/runtime.json" >/dev/null
 
 printf 'transport auto-selection contract: PASS\n'
