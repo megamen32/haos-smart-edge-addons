@@ -6,4 +6,4 @@ RUN apk add --no-cache iproute2 nftables
 
 COPY rootfs /
 
-RUN chmod 0755 /usr/bin/telegram-tproxy-policy.sh
+RUN chmod 0755 /usr/bin/telegram-tproxy-policy.sh /usr/bin/telegram-tproxy-watchdog.sh

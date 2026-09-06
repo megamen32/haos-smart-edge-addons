@@ -127,13 +127,19 @@ cleanup() {
     if [[ -n "$singbox_pid" ]]; then
         pids+=("$singbox_pid")
     fi
+    if [[ -n "$tproxy_watchdog_pid" ]]; then
+        pids+=("$tproxy_watchdog_pid")
+    fi
     kill "${pids[@]}" 2>/dev/null || true
     wait "${pids[@]}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
+tproxy_watchdog_pid=""
 if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then
     /usr/bin/telegram-tproxy-policy.sh "$TELEGRAM_TPROXY_PORT" --apply
+    /usr/bin/telegram-tproxy-watchdog.sh "$TELEGRAM_TPROXY_PORT" &
+    tproxy_watchdog_pid="$!"
 fi
 
 ready=0
@@ -160,6 +166,9 @@ set +e
 child_pids=("$smartdns_pid" "$smart_edge_pid")
 if [[ -n "$singbox_pid" ]]; then
     child_pids+=("$singbox_pid")
+fi
+if [[ -n "$tproxy_watchdog_pid" ]]; then
+    child_pids+=("$tproxy_watchdog_pid")
 fi
 wait -n "${child_pids[@]}"
 status="$?"

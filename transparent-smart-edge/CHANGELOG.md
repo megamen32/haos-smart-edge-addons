@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- Add a Telegram TPROXY policy watchdog that re-applies the idempotent nft
+  table and marked route when they disappear after a boot-time interface race
+  or an external flush; the 2026-09-06 lane incident showed the one-shot
+  boot apply leaves every health check green while the lane is dead.
+
 ## 0.1.0
 
 - Initial standalone Home Assistant repository release.

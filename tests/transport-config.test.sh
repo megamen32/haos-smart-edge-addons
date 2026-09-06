@@ -42,14 +42,16 @@ jq -e '
   and ([.outbounds[] | select(.tag == "us-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
 ' "$work_dir/generated.json" >/dev/null
 
-bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional
+  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional true 3128 de-regional
 
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127)] | length) == 1
   and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("lan-us-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == 3128)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("lan-de-http")))] | length) == 1
 ' "$work_dir/runtime.json" >/dev/null
 
 printf 'transport auto-selection contract: PASS\n'
