@@ -4,15 +4,8 @@ set -euo pipefail
 
 OPTIONS_PATH="${OPTIONS_PATH:-/data/options.json}"
 
-option() {
-    local key="$1"
-    local fallback="$2"
-    local value=""
-    if [[ -s "$OPTIONS_PATH" ]]; then
-        value="$(jq -er --arg key "$key" '.[$key] // empty' "$OPTIONS_PATH" 2>/dev/null || true)"
-    fi
-    [[ -n "$value" ]] && printf '%s' "$value" || printf '%s' "$fallback"
-}
+# shellcheck source=/dev/null
+source /usr/lib/transparent-smart-edge-options.sh
 
 dns_port="$(option dns_port 1053)"
 edge_port="$(option edge_port 10443)"

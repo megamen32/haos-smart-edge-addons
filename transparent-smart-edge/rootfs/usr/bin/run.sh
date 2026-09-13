@@ -9,19 +9,8 @@ DEFAULT_CONFIG_PATH=/etc/transparent-smart-edge/config.default.json
 SINGBOX_CONFIG_PATH=/data/singbox.json
 SINGBOX_RUNTIME_PATH=/data/singbox-runtime.json
 
-option() {
-    local key="$1"
-    local fallback="$2"
-    local value=""
-    if [[ -s "$OPTIONS_PATH" ]]; then
-        value="$(jq -er --arg key "$key" '.[$key] // empty' "$OPTIONS_PATH" 2>/dev/null || true)"
-    fi
-    if [[ -n "$value" ]]; then
-        printf '%s' "$value"
-    else
-        printf '%s' "$fallback"
-    fi
-}
+# shellcheck source=/dev/null
+source /usr/lib/transparent-smart-edge-options.sh
 
 require_port() {
     local name="$1"
