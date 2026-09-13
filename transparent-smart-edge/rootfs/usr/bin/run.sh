@@ -114,6 +114,7 @@ export PROXY_PORT="$SINGBOX_INTERNAL_PORT"
 
 /usr/bin/smartdns &
 smartdns_pid="$!"
+: > /run/smartdns-policy-reload
 singbox_pid=""
 if [[ "$singbox_enabled" == 1 ]]; then
     /usr/bin/sing-box run -c "$SINGBOX_RUNTIME_PATH" &
