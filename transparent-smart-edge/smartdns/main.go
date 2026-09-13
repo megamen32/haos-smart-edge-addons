@@ -20,9 +20,10 @@
 //
 // Sync: optional periodic pull of clients/policy from the panel API.
 //
-// Configuration is loaded once at startup from SMART_DNS_CONFIG (default
-// /opt/smart-dns/config.json). A short example is shipped alongside this
-// source as config.example.json.
+// Configuration is loaded at startup from SMART_DNS_CONFIG (default
+// /opt/smart-dns/config.json). A SIGHUP atomically refreshes the policy-owned
+// routing fields without interrupting DNS listeners or active edge sessions.
+// A short example is shipped alongside this source as config.example.json.
 package main
 
 import (
@@ -39,10 +40,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -478,6 +481,37 @@ func loadConfig(path string) (*config, *runtime, error) {
 	}
 
 	return cfg, rt, nil
+}
+
+// reloadPolicy refreshes only the durable routing policy. Listener addresses,
+// upstream transports, and transient edge authorizations stay with the running
+// runtime so a panel policy edit cannot disconnect active consumers.
+func (rt *runtime) reloadPolicy(path string) error {
+	_, next, err := loadConfig(path)
+	if err != nil {
+		return err
+	}
+	rt.mu.Lock()
+	rt.policyDefault = next.policyDefault
+	rt.defaultRoute = next.defaultRoute
+	rt.localDefaultRoute = next.localDefaultRoute
+	rt.rules = next.rules
+	rt.mu.Unlock()
+	return nil
+}
+
+func (rt *runtime) watchPolicyReload(path string) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGHUP)
+	go func() {
+		for range signals {
+			if err := rt.reloadPolicy(path); err != nil {
+				log.Printf("policy reload rejected: %v", err)
+				continue
+			}
+			log.Printf("policy reloaded from %s", path)
+		}
+	}()
 }
 
 // ---------------------------------------------------------------------------
@@ -1652,6 +1686,7 @@ func main() {
 		edgeAuthTTLMS = 120000
 	}
 	rt.synthCfg = rt.edgeProfiles["public"]
+	rt.watchPolicyReload(cfgPath)
 
 	// DoH
 	dh := &dohServer{rt: rt, defaultID: cfg.DefaultClientID}

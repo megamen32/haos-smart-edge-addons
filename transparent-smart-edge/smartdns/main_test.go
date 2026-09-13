@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -426,5 +429,57 @@ func TestRouteFromRulesUsesSpecificityAndProfileCondition(t *testing.T) {
 	}
 	if _, ok := routeFromRules("www.example.com", "local", rules); ok {
 		t.Fatal("external-only rule must not match internal DNS")
+	}
+}
+
+func writePolicyReloadConfig(t *testing.T, path string, rules []routingRule) {
+	t.Helper()
+	raw, err := os.ReadFile("../rootfs/etc/transparent-smart-edge/config.default.json")
+	if err != nil {
+		t.Fatalf("read default config: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse default config: %v", err)
+	}
+	doc["defaultRoute"] = "direct"
+	doc["localDefaultRoute"] = "direct"
+	doc["rules"] = rules
+	encoded, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode reload config: %v", err)
+	}
+	if err := os.WriteFile(path, encoded, 0o600); err != nil {
+		t.Fatalf("write reload config: %v", err)
+	}
+}
+
+func TestRuntimeReloadPolicyUpdatesRoutesWithoutDroppingRuntimeState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	writePolicyReloadConfig(t, path, []routingRule{{
+		ID: "quick:vpn:keenable.ai", Text: "keenable.ai", Match: "exact",
+		Through: []string{"direct"}, Conditions: []string{"externalDns", "internalDns"},
+	}})
+	_, rt, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := rt.routeFor("keenable.ai", "local"); got != "direct" {
+		t.Fatalf("initial route = %q, want direct", got)
+	}
+	rt.edgeAllowedIPs["192.168.2.50"] = ipEntry{Permanent: true}
+
+	writePolicyReloadConfig(t, path, []routingRule{{
+		ID: "quick:vpn:keenable.ai", Text: "keenable.ai", Match: "exact",
+		Through: []string{"vpn2"}, Conditions: []string{"externalDns", "internalDns", "vpn"},
+	}})
+	if err := rt.reloadPolicy(path); err != nil {
+		t.Fatalf("reload policy: %v", err)
+	}
+	if got := rt.routeFor("keenable.ai", "local"); got != "proxy" {
+		t.Fatalf("reloaded route = %q, want proxy", got)
+	}
+	if _, exists := rt.edgeAllowedIPs["192.168.2.50"]; !exists {
+		t.Fatal("reload discarded active edge authorization state")
 	}
 }

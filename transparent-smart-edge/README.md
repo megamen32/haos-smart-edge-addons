@@ -9,7 +9,9 @@ add-on's loopback-only sing-box listener.
 `/data/config.json` is the durable, panel-rendered SmartDNS policy. On first
 boot only, a direct-only safe default is created there. Each start writes
 listener/proxy overrides to `/data/runtime-config.json` without modifying the
-durable policy.
+durable policy. After an atomic policy update, send `SIGHUP` to `smartdns` to
+reload its routing rules without restarting the add-on or interrupting the TLS
+edge, sing-box, or active consumer sessions.
 
 The transport is intentionally not bundled: `/data/singbox.json` must contain
 the real VLESS/TLS/uTLS/WebSocket outbound. To import the already-working
