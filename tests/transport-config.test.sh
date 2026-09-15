@@ -21,7 +21,8 @@ cat >"$work_dir/source.json" <<'JSON'
     {"type":"urltest","tag":"de-regional","outbounds":["de-direct","de-cdn"],"url":"https://www.gstatic.com/generate_204","interval":"10s"},
     {"type":"vless","tag":"us-reality","server":"us.example","server_port":443,"uuid":"us-reality-uuid","tls":{"enabled":true,"utls":{"enabled":true},"reality":{"enabled":true,"public_key":"key","short_id":"id"}}},
     {"type":"vless","tag":"us-cdn","server":"us-cdn.example","server_port":443,"uuid":"us-cdn-uuid","tls":{"enabled":true,"utls":{"enabled":true}},"transport":{"type":"ws","path":"/us"}},
-    {"type":"urltest","tag":"us-regional","outbounds":["us-reality","us-cdn"],"url":"https://www.gstatic.com/generate_204","interval":"10s"}
+    {"type":"urltest","tag":"us-regional","outbounds":["us-reality","us-cdn"],"url":"https://www.gstatic.com/generate_204","interval":"10s"},
+    {"type":"vless","tag":"fi-helsinki","server":"fi.example","server_port":443,"uuid":"fi-uuid","flow":"xtls-rprx-vision","tls":{"enabled":true,"server_name":"www.google.com","utls":{"enabled":true,"fingerprint":"chrome"},"reality":{"enabled":true,"public_key":"key","short_id":"id"}}}
   ]
 }
 JSON
@@ -36,22 +37,28 @@ SING_BOX_BIN="$work_dir/sing-box" VALIDATOR_BIN="$validator" \
   bash "$importer" "$work_dir/source.json" de-regional "$work_dir/generated.json" 13128 us-regional
 
 jq -e '
-  ([.outbounds[].tag] | sort) == (["de-cdn","de-direct","de-regional","us-cdn","us-reality","us-regional"] | sort)
+  ([.outbounds[].tag] | sort) == (["de-cdn","de-direct","de-regional","fi-helsinki","us-cdn","us-reality","us-regional"] | sort)
   and .route.final == "de-regional"
   and ([.outbounds[] | select(.tag == "de-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
   and ([.outbounds[] | select(.tag == "us-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
 ' "$work_dir/generated.json" >/dev/null
 
-bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional
+printf '%s\n' '{"users":[{"username":"test-user","password":"test-password"}]}' >"$work_dir/proxy-users.json"
+
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json"
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional true 3128 de-regional
+  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct
 
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127)] | length) == 1
   and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("lan-us-http")))] | length) == 1
   and ([.inbounds[] | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == 3128)] | length) == 1
   and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("lan-de-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == 3129 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "fi-helsinki" and ((.inbound // []) | index("lan-fi-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == 3130 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "direct" and ((.inbound // []) | index("lan-ru-http")))] | length) == 1
 ' "$work_dir/runtime.json" >/dev/null
 
 printf 'transport auto-selection contract: PASS\n'

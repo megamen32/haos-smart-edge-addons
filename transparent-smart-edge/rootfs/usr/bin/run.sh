@@ -8,6 +8,8 @@ RUNTIME_CONFIG_PATH=/data/runtime-config.json
 DEFAULT_CONFIG_PATH=/etc/transparent-smart-edge/config.default.json
 SINGBOX_CONFIG_PATH=/data/singbox.json
 SINGBOX_RUNTIME_PATH=/data/singbox-runtime.json
+PROXY_USERS_PATH=/data/proxy-users.json
+EMPTY_PROXY_USERS_PATH=/etc/transparent-smart-edge/proxy-users.empty.json
 
 # shellcheck source=/dev/null
 source /usr/lib/transparent-smart-edge-options.sh
@@ -39,6 +41,12 @@ LAN_US_PROXY_OUTBOUND_TAG="$(option lan_us_proxy_outbound_tag us-regional)"
 LAN_DE_PROXY_ENABLED="$(option lan_de_proxy_enabled true)"
 LAN_DE_PROXY_PORT="$(option lan_de_proxy_port 3128)"
 LAN_DE_PROXY_OUTBOUND_TAG="$(option lan_de_proxy_outbound_tag de-regional)"
+LAN_FI_PROXY_ENABLED="$(option lan_fi_proxy_enabled true)"
+LAN_FI_PROXY_PORT="$(option lan_fi_proxy_port 3129)"
+LAN_FI_PROXY_OUTBOUND_TAG="$(option lan_fi_proxy_outbound_tag fi-helsinki)"
+LAN_RU_PROXY_ENABLED="$(option lan_ru_proxy_enabled true)"
+LAN_RU_PROXY_PORT="$(option lan_ru_proxy_port 3130)"
+LAN_RU_PROXY_OUTBOUND_TAG="$(option lan_ru_proxy_outbound_tag direct)"
 
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
@@ -47,6 +55,23 @@ require_port singbox_internal_port "$SINGBOX_INTERNAL_PORT"
 require_port telegram_tproxy_port "$TELEGRAM_TPROXY_PORT"
 require_port lan_us_proxy_port "$LAN_US_PROXY_PORT"
 require_port lan_de_proxy_port "$LAN_DE_PROXY_PORT"
+require_port lan_fi_proxy_port "$LAN_FI_PROXY_PORT"
+require_port lan_ru_proxy_port "$LAN_RU_PROXY_PORT"
+
+proxy_users_required=false
+for proxy_enabled in "$LAN_US_PROXY_ENABLED" "$LAN_DE_PROXY_ENABLED" "$LAN_FI_PROXY_ENABLED" "$LAN_RU_PROXY_ENABLED"; do
+    if [[ "$proxy_enabled" == true ]]; then
+        proxy_users_required=true
+        break
+    fi
+done
+
+PROXY_USERS_FILE="$EMPTY_PROXY_USERS_PATH"
+if [[ "$proxy_users_required" == true ]]; then
+    [[ -s "$PROXY_USERS_PATH" ]] || { printf 'missing required proxy auth file: %s\n' "$PROXY_USERS_PATH" >&2; exit 2; }
+    jq -e '(.users | type == "array") and (.users | length > 0) and all(.users[]?; (.username | type == "string" and length > 0) and (.password | type == "string" and length > 0))' "$PROXY_USERS_PATH" >/dev/null
+    PROXY_USERS_FILE="$PROXY_USERS_PATH"
+fi
 
 if ! /usr/bin/sing-box version 2>/dev/null | grep -Fq 'sing-box version 1.13.14'; then
     printf 'bundled sing-box is not version 1.13.14\n' >&2
@@ -59,10 +84,13 @@ if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
       "$SINGBOX_CONFIG_PATH" "$SINGBOX_RUNTIME_PATH.tmp" \
       "$TELEGRAM_TPROXY_ENABLED" "$TELEGRAM_TPROXY_PORT" "$TELEGRAM_OUTBOUND_TAG" \
       "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" \
-      "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG"
+      "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" \
+      "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" \
+      "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" \
+      "$PROXY_USERS_FILE"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2

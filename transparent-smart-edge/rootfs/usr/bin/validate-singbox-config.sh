@@ -12,6 +12,12 @@ lan_us_outbound_tag="${7:-us-regional}"
 lan_de_enabled="${8:-false}"
 lan_de_port="${9:-3128}"
 lan_de_outbound_tag="${10:-de-regional}"
+lan_fi_enabled="${11:-false}"
+lan_fi_port="${12:-3129}"
+lan_fi_outbound_tag="${13:-fi-helsinki}"
+lan_ru_enabled="${14:-false}"
+lan_ru_port="${15:-3130}"
+lan_ru_outbound_tag="${16:-direct}"
 singbox_bin="${SING_BOX_BIN:-/usr/bin/sing-box}"
 
 if [[ ! -s "$config_path" ]]; then
@@ -29,6 +35,12 @@ if ! jq -e \
     --argjson lan_de_enabled "$lan_de_enabled" \
     --argjson lan_de_port "$lan_de_port" \
     --arg lan_de_tag "$lan_de_outbound_tag" \
+    --argjson lan_fi_enabled "$lan_fi_enabled" \
+    --argjson lan_fi_port "$lan_fi_port" \
+    --arg lan_fi_tag "$lan_fi_outbound_tag" \
+    --argjson lan_ru_enabled "$lan_ru_enabled" \
+    --argjson lan_ru_port "$lan_ru_port" \
+    --arg lan_ru_tag "$lan_ru_outbound_tag" \
     '. as $root
      | def by_tag($wanted): [$root.outbounds[]? | select(.tag == $wanted)];
      def valid_leaf:
@@ -61,6 +73,16 @@ if ! jq -e \
             and ([.inbounds[]? | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == $lan_de_port)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_de_tag and ((.inbound // []) | index("lan-de-http")))] | length) == 1
           else ([.inbounds[]? | select(.tag == "lan-de-http")] | length) == 0 end)
+     and (if $lan_fi_enabled then
+            valid_target($lan_fi_tag)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == $lan_fi_port)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_fi_tag and ((.inbound // []) | index("lan-fi-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-fi-http")] | length) == 0 end)
+     and (if $lan_ru_enabled then
+            ([.outbounds[]? | select(.tag == $lan_ru_tag and .type == "direct")] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == $lan_ru_port)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_ru_tag and ((.inbound // []) | index("lan-ru-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-ru-http")] | length) == 0 end)
      and (if ([.inbounds[]? | select(.tag == "telegram-tproxy")] | length) == 0 then true
           else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)' \
     "$config_path" >/dev/null; then
