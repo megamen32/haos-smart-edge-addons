@@ -40,35 +40,44 @@ jq \
   --argjson lan_ru_port "$lan_ru_port" \
   --arg lan_ru_outbound "$lan_ru_outbound" \
   --slurpfile proxy_auth "$proxy_users_file" '
-  def public_http($tag; $port):
-    {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:$port}
-    + (if (($proxy_auth[0].users // []) | length) > 0 then {users:$proxy_auth[0].users} else {} end);
-  .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy" and .tag != "lan-us-http" and .tag != "lan-de-http" and .tag != "lan-fi-http" and .tag != "lan-ru-http")))
+  def lan_http($tag; $port):
+    {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:$port};
+  def wan_http($tag; $port):
+    {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:($port + 10000),users:$proxy_auth[0].users};
+  .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy" and .tag != "lan-us-http" and .tag != "lan-de-http" and .tag != "lan-fi-http" and .tag != "lan-ru-http" and .tag != "wan-us-http" and .tag != "wan-de-http" and .tag != "wan-fi-http" and .tag != "wan-ru-http")))
   | .route.rules = ((.route.rules // []) | map(select(
       ((.inbound // []) | index("telegram-tproxy")) == null
       and ((.inbound // []) | index("lan-us-http")) == null
       and ((.inbound // []) | index("lan-de-http")) == null
       and ((.inbound // []) | index("lan-fi-http")) == null
       and ((.inbound // []) | index("lan-ru-http")) == null
+      and ((.inbound // []) | index("wan-us-http")) == null
+      and ((.inbound // []) | index("wan-de-http")) == null
+      and ((.inbound // []) | index("wan-fi-http")) == null
+      and ((.inbound // []) | index("wan-ru-http")) == null
     )))
   | if $telegram_enabled then
       .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$telegram_port}]
       | .route.rules = ([{inbound:["telegram-tproxy"],outbound:$telegram_outbound}] + .route.rules)
     else . end
   | if $lan_us_enabled then
-      .inbounds += [public_http("lan-us-http"; $lan_us_port)]
+      .inbounds += [lan_http("lan-us-http"; $lan_us_port), wan_http("wan-us-http"; $lan_us_port)]
       | .route.rules = ([{inbound:["lan-us-http"],outbound:$lan_us_outbound}] + .route.rules)
+      | .route.rules = ([{inbound:["wan-us-http"],outbound:$lan_us_outbound}] + .route.rules)
     else . end
   | if $lan_de_enabled then
-      .inbounds += [public_http("lan-de-http"; $lan_de_port)]
+      .inbounds += [lan_http("lan-de-http"; $lan_de_port), wan_http("wan-de-http"; $lan_de_port)]
       | .route.rules = ([{inbound:["lan-de-http"],outbound:$lan_de_outbound}] + .route.rules)
+      | .route.rules = ([{inbound:["wan-de-http"],outbound:$lan_de_outbound}] + .route.rules)
     else . end
   | if $lan_fi_enabled then
-      .inbounds += [public_http("lan-fi-http"; $lan_fi_port)]
+      .inbounds += [lan_http("lan-fi-http"; $lan_fi_port), wan_http("wan-fi-http"; $lan_fi_port)]
       | .route.rules = ([{inbound:["lan-fi-http"],outbound:$lan_fi_outbound}] + .route.rules)
+      | .route.rules = ([{inbound:["wan-fi-http"],outbound:$lan_fi_outbound}] + .route.rules)
     else . end
   | if $lan_ru_enabled then
-      .inbounds += [public_http("lan-ru-http"; $lan_ru_port)]
+      .inbounds += [lan_http("lan-ru-http"; $lan_ru_port), wan_http("wan-ru-http"; $lan_ru_port)]
       | .route.rules = ([{inbound:["lan-ru-http"],outbound:$lan_ru_outbound}] + .route.rules)
+      | .route.rules = ([{inbound:["wan-ru-http"],outbound:$lan_ru_outbound}] + .route.rules)
     else . end
 ' "$source_config" >"$destination"

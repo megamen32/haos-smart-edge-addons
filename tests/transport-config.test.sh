@@ -51,14 +51,22 @@ SING_BOX_BIN="$work_dir/sing-box" \
   bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct
 
 jq -e '
-  ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127)] | length) == 1
+  ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("lan-us-http")))] | length) == 1
-  and ([.inbounds[] | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == 3128)] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-us-http" and .listen_port == 13127 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("wan-us-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == 3128 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("lan-de-http")))] | length) == 1
-  and ([.inbounds[] | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == 3129 and (.users | length) == 1)] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-de-http" and .listen_port == 13128 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("wan-de-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == 3129 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "fi-helsinki" and ((.inbound // []) | index("lan-fi-http")))] | length) == 1
-  and ([.inbounds[] | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == 3130 and (.users | length) == 1)] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-fi-http" and .listen_port == 13129 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "fi-helsinki" and ((.inbound // []) | index("wan-fi-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == 3130 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "direct" and ((.inbound // []) | index("lan-ru-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-ru-http" and .listen_port == 13130 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "direct" and ((.inbound // []) | index("wan-ru-http")))] | length) == 1
 ' "$work_dir/runtime.json" >/dev/null
 
 printf 'transport auto-selection contract: PASS\n'

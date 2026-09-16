@@ -38,15 +38,19 @@ if [[ -s "$singbox_config" ]]; then
     nc -z -w 2 127.0.0.1 "$singbox_port"
     if [[ "$lan_us_enabled" == true ]]; then
         nc -z -w 2 127.0.0.1 "$lan_us_port"
+        nc -z -w 2 127.0.0.1 "$((lan_us_port + 10000))"
     fi
     if [[ "$lan_de_enabled" == true ]]; then
         nc -z -w 2 127.0.0.1 "$lan_de_port"
+        nc -z -w 2 127.0.0.1 "$((lan_de_port + 10000))"
     fi
     if [[ "$lan_fi_enabled" == true ]]; then
         nc -z -w 2 127.0.0.1 "$lan_fi_port"
+        nc -z -w 2 127.0.0.1 "$((lan_fi_port + 10000))"
     fi
     if [[ "$lan_ru_enabled" == true ]]; then
         nc -z -w 2 127.0.0.1 "$lan_ru_port"
+        nc -z -w 2 127.0.0.1 "$((lan_ru_port + 10000))"
     fi
     if [[ "$proxy_users_required" == true ]]; then
         [[ -s /data/proxy-users.json ]] || { printf 'missing required proxy auth file\n' >&2; exit 1; }
@@ -56,11 +60,12 @@ if [[ -s "$singbox_config" ]]; then
           --argjson de "$lan_de_enabled" \
           --argjson fi "$lan_fi_enabled" \
           --argjson ru "$lan_ru_enabled" '
-          def authed($tag): ([.inbounds[]? | select(.tag == $tag and (.users | type == "array") and (.users | length > 0))] | length) == 1;
-          (if $us then authed("lan-us-http") else true end)
-          and (if $de then authed("lan-de-http") else true end)
-          and (if $fi then authed("lan-fi-http") else true end)
-          and (if $ru then authed("lan-ru-http") else true end)
+          def lan_open($tag): ([.inbounds[]? | select(.tag == $tag and ((.users // []) | length) == 0)] | length) == 1;
+          def wan_authed($tag): ([.inbounds[]? | select(.tag == $tag and (.users | type == "array") and (.users | length > 0))] | length) == 1;
+          (if $us then lan_open("lan-us-http") and wan_authed("wan-us-http") else true end)
+          and (if $de then lan_open("lan-de-http") and wan_authed("wan-de-http") else true end)
+          and (if $fi then lan_open("lan-fi-http") and wan_authed("wan-fi-http") else true end)
+          and (if $ru then lan_open("lan-ru-http") and wan_authed("wan-ru-http") else true end)
         ' /data/singbox-runtime.json >/dev/null
     fi
 elif [[ "$require_singbox_config" == true || "$dns_port" == 53 || "$edge_port" == 443 ]]; then

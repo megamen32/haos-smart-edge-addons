@@ -65,24 +65,32 @@ if ! jq -e \
      and (if $telegram_tag == "" then true else valid_target($telegram_tag) end)
      and (if $lan_us_enabled then
             valid_target($lan_us_tag)
-            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == $lan_us_port)] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == $lan_us_port and ((.users // []) | length) == 0)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_us_tag and ((.inbound // []) | index("lan-us-http")))] | length) == 1
-          else ([.inbounds[]? | select(.tag == "lan-us-http")] | length) == 0 end)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "wan-us-http" and .listen == "0.0.0.0" and .listen_port == ($lan_us_port + 10000) and (.users | length) > 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_us_tag and ((.inbound // []) | index("wan-us-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-us-http" or .tag == "wan-us-http")] | length) == 0 end)
      and (if $lan_de_enabled then
             valid_target($lan_de_tag)
-            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == $lan_de_port)] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-de-http" and .listen == "0.0.0.0" and .listen_port == $lan_de_port and ((.users // []) | length) == 0)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_de_tag and ((.inbound // []) | index("lan-de-http")))] | length) == 1
-          else ([.inbounds[]? | select(.tag == "lan-de-http")] | length) == 0 end)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "wan-de-http" and .listen == "0.0.0.0" and .listen_port == ($lan_de_port + 10000) and (.users | length) > 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_de_tag and ((.inbound // []) | index("wan-de-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-de-http" or .tag == "wan-de-http")] | length) == 0 end)
      and (if $lan_fi_enabled then
             valid_target($lan_fi_tag)
-            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == $lan_fi_port)] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == $lan_fi_port and ((.users // []) | length) == 0)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_fi_tag and ((.inbound // []) | index("lan-fi-http")))] | length) == 1
-          else ([.inbounds[]? | select(.tag == "lan-fi-http")] | length) == 0 end)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "wan-fi-http" and .listen == "0.0.0.0" and .listen_port == ($lan_fi_port + 10000) and (.users | length) > 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_fi_tag and ((.inbound // []) | index("wan-fi-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-fi-http" or .tag == "wan-fi-http")] | length) == 0 end)
      and (if $lan_ru_enabled then
             ([.outbounds[]? | select(.tag == $lan_ru_tag and .type == "direct")] | length) == 1
-            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == $lan_ru_port)] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == $lan_ru_port and ((.users // []) | length) == 0)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_ru_tag and ((.inbound // []) | index("lan-ru-http")))] | length) == 1
-          else ([.inbounds[]? | select(.tag == "lan-ru-http")] | length) == 0 end)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "wan-ru-http" and .listen == "0.0.0.0" and .listen_port == ($lan_ru_port + 10000) and (.users | length) > 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_ru_tag and ((.inbound // []) | index("wan-ru-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-ru-http" or .tag == "wan-ru-http")] | length) == 0 end)
      and (if ([.inbounds[]? | select(.tag == "telegram-tproxy")] | length) == 0 then true
           else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)' \
     "$config_path" >/dev/null; then
