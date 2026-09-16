@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -214,6 +216,33 @@ func TestConnectUsesHTTPProxyAndPreservesBufferedTunnelBytes(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDirectDestinationCannotLoopThroughLocalIngress(t *testing.T) {
+	oldLookup, oldDial, oldProxy, oldAddresses := lookupIPv4, dialTCP, proxyHost, localAddresses
+	defer func() {
+		lookupIPv4, dialTCP, proxyHost, localAddresses = oldLookup, oldDial, oldProxy, oldAddresses
+	}()
+	proxyHost = ""
+	localAddresses = []net.Addr{&net.IPNet{IP: net.ParseIP("192.0.2.100"), Mask: net.CIDRMask(24, 32)}}
+	dials := 0
+	dialTCP = func(string, string, time.Duration) (net.Conn, error) {
+		dials++
+		return nil, errors.New("must not dial")
+	}
+	for i, address := range []string{"192.0.2.100", "127.0.0.1", "0.0.0.0"} {
+		lookupIPv4 = func(context.Context, string) ([]net.IP, error) { return []net.IP{net.ParseIP(address)}, nil }
+		conn, _, err := connectWithRetry(fmt.Sprintf("loop-%d.example", i))
+		if conn != nil || err == nil || !strings.Contains(err.Error(), "forwarding loop") {
+			t.Fatalf("address %s: conn=%v err=%v", address, conn, err)
+		}
+	}
+	if dials != 0 {
+		t.Fatalf("local destinations caused %d dials", dials)
+	}
+	if isLocalDestination(net.ParseIP("192.0.2.101")) {
+		t.Fatal("other host in same subnet must remain reachable")
 	}
 }
 

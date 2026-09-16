@@ -49,7 +49,14 @@ var (
 	lookupIPv4    = func(ctx context.Context, host string) ([]net.IP, error) {
 		return (&net.Resolver{PreferGo: true}).LookupIP(ctx, "ip4", host)
 	}
-	dialTCP = net.DialTimeout
+	dialTCP        = net.DialTimeout
+	localAddresses = func() []net.Addr {
+		addresses, err := net.InterfaceAddrs()
+		if err != nil {
+			log.Fatalf("cannot enumerate local addresses: %v", err)
+		}
+		return addresses
+	}()
 )
 
 type dnsCacheEntry struct {
@@ -365,6 +372,23 @@ func connectThroughHTTPProxy(host string) (net.Conn, error) {
 	return &bufferedConn{Conn: conn, reader: reader}, nil
 }
 
+// A direct SNI destination must not return to this host's public TLS ingress.
+// Otherwise nginx -> smart-edge -> nginx recirculates one ClientHello forever.
+func isLocalDestination(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsUnspecified() {
+		return true
+	}
+	for _, address := range localAddresses {
+		if network, ok := address.(*net.IPNet); ok && network.IP.Equal(ip) {
+			return true
+		}
+		if address, ok := address.(*net.IPAddr); ok && address.IP.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // connectWithRetry dials upstream:CONNECT_PORT up to maxRetries times.
 // Returns the connection, the chosen IP, and any error.
 func connectWithRetry(host string) (net.Conn, string, error) {
@@ -388,6 +412,9 @@ func connectWithRetry(host string) (net.Conn, string, error) {
 				time.Sleep(200 * time.Millisecond)
 			}
 			continue
+		}
+		if isLocalDestination(ip) {
+			return nil, "", errors.New("refusing local destination: forwarding loop")
 		}
 		addr := net.JoinHostPort(ip.String(), strconv.Itoa(connectPort))
 		conn, err := dialTCP("tcp", addr, connectTimeout)
