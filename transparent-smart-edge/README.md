@@ -21,7 +21,7 @@ the existing DE and US `urltest` groups from a server-44 config without
 printing their credentials:
 
 ```bash
-/usr/bin/prepare-singbox-config.sh /data/server44-source.json de-regional /data/singbox.json 13128 us-regional
+/usr/bin/prepare-singbox-config.sh /data/server44-source.json de-regional /data/singbox.json 23128 us-regional
 ```
 
 The importer writes mode `0600` and runs `sing-box check` before replacing the

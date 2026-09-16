@@ -5,7 +5,7 @@ set -euo pipefail
 source_config="${1:?usage: prepare-singbox-config.sh SOURCE_CONFIG [OUTBOUND_TAG] [DESTINATION] [LOOPBACK_PORT] [TELEGRAM_OUTBOUND_TAG]}"
 outbound_tag="${2:-de-regional}"
 destination="${3:-/data/singbox.json}"
-listen_port="${4:-13128}"
+listen_port="${4:-23128}"
 telegram_outbound_tag="${5:-us-regional}"
 validator="${VALIDATOR_BIN:-/usr/bin/validate-singbox-config.sh}"
 

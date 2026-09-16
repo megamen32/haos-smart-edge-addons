@@ -9,7 +9,7 @@ source /usr/lib/transparent-smart-edge-options.sh
 
 dns_port="$(option dns_port 1053)"
 edge_port="$(option edge_port 10443)"
-singbox_port="$(option singbox_internal_port 13128)"
+singbox_port="$(option singbox_internal_port 23128)"
 lan_us_enabled="$(option lan_us_proxy_enabled true)"
 lan_us_port="$(option lan_us_proxy_port 3127)"
 lan_de_enabled="$(option lan_de_proxy_enabled true)"

@@ -34,7 +34,7 @@ SH
 chmod 0700 "$work_dir/sing-box"
 
 SING_BOX_BIN="$work_dir/sing-box" VALIDATOR_BIN="$validator" \
-  bash "$importer" "$work_dir/source.json" de-regional "$work_dir/generated.json" 13128 us-regional
+  bash "$importer" "$work_dir/source.json" de-regional "$work_dir/generated.json" 23128 us-regional
 
 jq -e '
   ([.outbounds[].tag] | sort) == (["de-cdn","de-direct","de-regional","fi-helsinki","us-cdn","us-reality","us-regional"] | sort)
@@ -48,7 +48,7 @@ printf '%s\n' '{"users":[{"username":"test-user","password":"test-password"}]}' 
 bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json"
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 13128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct
+  bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct
 
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127 and ((.users // []) | length) == 0)] | length) == 1

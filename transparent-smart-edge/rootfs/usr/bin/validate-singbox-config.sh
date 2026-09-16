@@ -3,7 +3,7 @@
 set -euo pipefail
 
 config_path="${1:-/data/singbox.json}"
-listen_port="${2:-13128}"
+listen_port="${2:-23128}"
 outbound_tag="${3:-de-regional}"
 telegram_outbound_tag="${4:-us-regional}"
 lan_us_enabled="${5:-false}"
