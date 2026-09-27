@@ -6,9 +6,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -161,6 +163,62 @@ func TestResolveSelectsEdgeAddressFromListenerProfile(t *testing.T) {
 	}
 	if got := firstA(t, public); got != "185.240.120.152" {
 		t.Fatalf("public edge = %s", got)
+	}
+}
+
+func TestProxyRouteFallsBackToDirectUDPAfterBothDoHFailures(t *testing.T) {
+	udp, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer udp.Close()
+	if err := udp.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	udpDone := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 512)
+		n, addr, err := udp.ReadFromUDP(buf)
+		if err != nil {
+			udpDone <- err
+			return
+		}
+		q, err := parseQuestion(buf[:n])
+		if err != nil {
+			udpDone <- err
+			return
+		}
+		_, err = udp.WriteToUDP(makeAResponse(buf[:n], q, []string{"203.0.113.9"}, 60), addr)
+		udpDone <- err
+	}()
+
+	var attempts atomic.Int32
+	doh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer doh.Close()
+	resolver := &proxyDoHResolver{client: doh.Client(), endpoint: doh.URL}
+	rt := newRuntime()
+	rt.defaultRoute = "proxy"
+	rt.localDefaultRoute = "proxy"
+	rt.clients["client"] = clientCfg{ID: "client", Enabled: true}
+	rt.proxyResolver = resolver
+	rt.backupResolver = resolver
+	currentConfig = &config{DirectDNS: upstreamCfg{Host: "127.0.0.1", Port: udp.LocalAddr().(*net.UDPAddr).Port, TimeoutMS: 1000}}
+
+	answer, err := rt.resolve(dnsAQuery("example.org", 0x4848), "client", "udp", "192.168.2.10", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := firstA(t, answer); got != "203.0.113.9" {
+		t.Fatalf("fallback answer = %s", got)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("DoH attempts = %d, want 2", got)
+	}
+	if err := <-udpDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

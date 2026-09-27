@@ -1036,12 +1036,16 @@ func (rt *runtime) resolve(query []byte, clientID, proto, reqIP, profile string)
 		}
 	}
 	if route == "proxy" || route == "vusa-proxy" {
-		ctx, cancel := context.WithTimeout(context.Background(), 13*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 16*time.Second)
 		defer cancel()
 		resp, err = rt.proxyResolver.query(ctx, query)
 		if err != nil {
 			log.Printf("%s primary DoH failed: %v", proto, err)
 			resp, err = rt.backupResolver.query(ctx, query)
+		}
+		if err != nil {
+			log.Printf("%s backup DoH failed: %v; trying direct UDP", proto, err)
+			resp, err = queryUDP(ctx, query, rt.directCfg())
 		}
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
