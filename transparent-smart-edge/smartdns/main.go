@@ -83,7 +83,6 @@ type config struct {
 	StaticASuffix   map[string][]string   `json:"staticASuffix"`
 	StaticAExclude  []string              `json:"staticAExclude"`
 	DirectDNS       upstreamCfg           `json:"directDns"`
-	DirectDoH       proxyDoHCfg           `json:"directDoh"`
 	HTTPProxy       upstreamCfg           `json:"httpProxy"`
 	ProxyDoH        proxyDoHCfg           `json:"proxyDoh"`
 	BackupDoH       proxyDoHCfg           `json:"backupDoh"`
@@ -120,11 +119,10 @@ type upstreamCfg struct {
 }
 
 type proxyDoHCfg struct {
-	URLHost     string `json:"urlHost"`
-	BootstrapIP string `json:"bootstrapIp"`
-	Path        string `json:"path"`
-	Port        int    `json:"port"`
-	TimeoutMS   int    `json:"timeoutMs"`
+	URLHost   string `json:"urlHost"`
+	Path      string `json:"path"`
+	Port      int    `json:"port"`
+	TimeoutMS int    `json:"timeoutMs"`
 }
 
 type tlsCfg struct {
@@ -196,7 +194,6 @@ type runtime struct {
 	edgeProfiles       map[string]*smartEdge
 	cache              *dnsCache
 	proxyResolver      *proxyDoHResolver
-	directResolver     *proxyDoHResolver
 	backupResolver     *proxyDoHResolver
 	policyDefault      string
 	rules              []routingRule
@@ -302,7 +299,6 @@ func loadConfig(path string) (*config, *runtime, error) {
 		StaticASuffix     map[string][]string       `json:"staticASuffix"`
 		StaticAExclude    []string                  `json:"staticAExclude"`
 		DirectDNS         upstreamCfg               `json:"directDns"`
-		DirectDoH         proxyDoHCfg               `json:"directDoh"`
 		HTTPProxy         upstreamCfg               `json:"httpProxy"`
 		ProxyDoH          proxyDoHCfg               `json:"proxyDoh"`
 		BackupDoH         proxyDoHCfg               `json:"backupDoh"`
@@ -335,7 +331,6 @@ func loadConfig(path string) (*config, *runtime, error) {
 		StaticASuffix:     rawCfg.StaticASuffix,
 		StaticAExclude:    rawCfg.StaticAExclude,
 		DirectDNS:         rawCfg.DirectDNS,
-		DirectDoH:         rawCfg.DirectDoH,
 		HTTPProxy:         rawCfg.HTTPProxy,
 		ProxyDoH:          rawCfg.ProxyDoH,
 		BackupDoH:         rawCfg.BackupDoH,
@@ -388,14 +383,11 @@ func loadConfig(path string) (*config, *runtime, error) {
 	if cfg.DirectDNS.Host == "" {
 		cfg.DirectDNS = upstreamCfg{Host: "9.9.9.9", Port: 53, TimeoutMS: 2000}
 	}
-	if cfg.DirectDoH.URLHost == "" {
-		cfg.DirectDoH = proxyDoHCfg{URLHost: "dns.quad9.net", BootstrapIP: "9.9.9.9", Path: "/dns-query", Port: 443, TimeoutMS: 3000}
-	}
 	if cfg.HTTPProxy.Host == "" {
 		cfg.HTTPProxy = upstreamCfg{Host: "127.0.0.1", Port: 3128, TimeoutMS: 5000}
 	}
 	if cfg.ProxyDoH.URLHost == "" {
-		cfg.ProxyDoH = proxyDoHCfg{URLHost: "cloudflare-dns.com", Path: "/dns-query", Port: 443, TimeoutMS: 7000}
+		cfg.ProxyDoH = proxyDoHCfg{URLHost: "dns.quad9.net", Path: "/dns-query", Port: 443, TimeoutMS: 5000}
 	}
 	if cfg.BackupDoH.URLHost == "" {
 		cfg.BackupDoH = proxyDoHCfg{URLHost: "dns.google", Path: "/dns-query", Port: 443, TimeoutMS: 5000}
@@ -416,10 +408,6 @@ func loadConfig(path string) (*config, *runtime, error) {
 	rt.backupResolver, err = newProxyDoHResolver(cfg.BackupDoH, cfg.HTTPProxy)
 	if err != nil {
 		return nil, nil, fmt.Errorf("backup DoH config: %w", err)
-	}
-	rt.directResolver, err = newDirectDoHResolver(cfg.DirectDoH)
-	if err != nil {
-		return nil, nil, fmt.Errorf("direct DoH config: %w", err)
 	}
 	for profile, edge := range cfg.EdgeProfiles {
 		rt.edgeProfiles[strings.ToLower(profile)] = edge
@@ -1058,9 +1046,9 @@ func (rt *runtime) resolve(query []byte, clientID, proto, reqIP, profile string)
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
 		defer cancel()
-		resp, err = rt.directResolver.query(ctx, query)
+		resp, err = rt.proxyResolver.query(ctx, query)
 		if err != nil {
-			log.Printf("%s direct DoH failed: %v", proto, err)
+			log.Printf("%s primary DoH failed: %v", proto, err)
 			resp, err = rt.backupResolver.query(ctx, query)
 		}
 		if err != nil {

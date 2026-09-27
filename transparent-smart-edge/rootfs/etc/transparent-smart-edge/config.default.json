@@ -15,12 +15,11 @@
     "port": 53,
     "timeoutMs": 2000
   },
-  "directDoh": {
+  "proxyDoh": {
     "urlHost": "dns.quad9.net",
-    "bootstrapIp": "9.9.9.9",
     "path": "/dns-query",
     "port": 443,
-    "timeoutMs": 3000
+    "timeoutMs": 5000
   },
   "backupDoh": {
     "urlHost": "dns.google",
