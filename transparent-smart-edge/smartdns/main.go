@@ -83,8 +83,10 @@ type config struct {
 	StaticASuffix   map[string][]string   `json:"staticASuffix"`
 	StaticAExclude  []string              `json:"staticAExclude"`
 	DirectDNS       upstreamCfg           `json:"directDns"`
+	DirectDoH       proxyDoHCfg           `json:"directDoh"`
 	HTTPProxy       upstreamCfg           `json:"httpProxy"`
 	ProxyDoH        proxyDoHCfg           `json:"proxyDoh"`
+	BackupDoH       proxyDoHCfg           `json:"backupDoh"`
 	TLS             tlsCfg                `json:"tls"`
 	Clients         sync.Map              `json:"-"` // local clients map; populated from local+remote
 	Rules           []routingRule         `json:"rules"`
@@ -118,10 +120,11 @@ type upstreamCfg struct {
 }
 
 type proxyDoHCfg struct {
-	URLHost   string `json:"urlHost"`
-	Path      string `json:"path"`
-	Port      int    `json:"port"`
-	TimeoutMS int    `json:"timeoutMs"`
+	URLHost     string `json:"urlHost"`
+	BootstrapIP string `json:"bootstrapIp"`
+	Path        string `json:"path"`
+	Port        int    `json:"port"`
+	TimeoutMS   int    `json:"timeoutMs"`
 }
 
 type tlsCfg struct {
@@ -193,6 +196,8 @@ type runtime struct {
 	edgeProfiles       map[string]*smartEdge
 	cache              *dnsCache
 	proxyResolver      *proxyDoHResolver
+	directResolver     *proxyDoHResolver
+	backupResolver     *proxyDoHResolver
 	policyDefault      string
 	rules              []routingRule
 
@@ -297,8 +302,10 @@ func loadConfig(path string) (*config, *runtime, error) {
 		StaticASuffix     map[string][]string       `json:"staticASuffix"`
 		StaticAExclude    []string                  `json:"staticAExclude"`
 		DirectDNS         upstreamCfg               `json:"directDns"`
+		DirectDoH         proxyDoHCfg               `json:"directDoh"`
 		HTTPProxy         upstreamCfg               `json:"httpProxy"`
 		ProxyDoH          proxyDoHCfg               `json:"proxyDoh"`
+		BackupDoH         proxyDoHCfg               `json:"backupDoh"`
 		TLS               tlsCfg                    `json:"tls"`
 		Clients           map[string]map[string]any `json:"clients"`
 		Sync              syncCfg                   `json:"sync"`
@@ -328,8 +335,10 @@ func loadConfig(path string) (*config, *runtime, error) {
 		StaticASuffix:     rawCfg.StaticASuffix,
 		StaticAExclude:    rawCfg.StaticAExclude,
 		DirectDNS:         rawCfg.DirectDNS,
+		DirectDoH:         rawCfg.DirectDoH,
 		HTTPProxy:         rawCfg.HTTPProxy,
 		ProxyDoH:          rawCfg.ProxyDoH,
+		BackupDoH:         rawCfg.BackupDoH,
 		TLS:               rawCfg.TLS,
 		Sync:              rawCfg.Sync,
 		EdgeProfiles:      rawCfg.EdgeProfiles,
@@ -377,13 +386,19 @@ func loadConfig(path string) (*config, *runtime, error) {
 		cfg.PublicDNSListen.Profile = "public"
 	}
 	if cfg.DirectDNS.Host == "" {
-		cfg.DirectDNS = upstreamCfg{Host: "1.1.1.1", Port: 53, TimeoutMS: 3000}
+		cfg.DirectDNS = upstreamCfg{Host: "9.9.9.9", Port: 53, TimeoutMS: 2000}
+	}
+	if cfg.DirectDoH.URLHost == "" {
+		cfg.DirectDoH = proxyDoHCfg{URLHost: "dns.quad9.net", BootstrapIP: "9.9.9.9", Path: "/dns-query", Port: 443, TimeoutMS: 3000}
 	}
 	if cfg.HTTPProxy.Host == "" {
 		cfg.HTTPProxy = upstreamCfg{Host: "127.0.0.1", Port: 3128, TimeoutMS: 5000}
 	}
 	if cfg.ProxyDoH.URLHost == "" {
 		cfg.ProxyDoH = proxyDoHCfg{URLHost: "cloudflare-dns.com", Path: "/dns-query", Port: 443, TimeoutMS: 7000}
+	}
+	if cfg.BackupDoH.URLHost == "" {
+		cfg.BackupDoH = proxyDoHCfg{URLHost: "dns.google", Path: "/dns-query", Port: 443, TimeoutMS: 5000}
 	}
 	if cfg.BaseDotName == "" {
 		cfg.BaseDotName = "dns.bezrabotnyi.com"
@@ -398,6 +413,14 @@ func loadConfig(path string) (*config, *runtime, error) {
 		return nil, nil, fmt.Errorf("proxy DoH config: %w", err)
 	}
 	rt.proxyResolver = proxyResolver
+	rt.backupResolver, err = newProxyDoHResolver(cfg.BackupDoH, cfg.HTTPProxy)
+	if err != nil {
+		return nil, nil, fmt.Errorf("backup DoH config: %w", err)
+	}
+	rt.directResolver, err = newDirectDoHResolver(cfg.DirectDoH)
+	if err != nil {
+		return nil, nil, fmt.Errorf("direct DoH config: %w", err)
+	}
 	for profile, edge := range cfg.EdgeProfiles {
 		rt.edgeProfiles[strings.ToLower(profile)] = edge
 	}
@@ -1025,11 +1048,25 @@ func (rt *runtime) resolve(query []byte, clientID, proto, reqIP, profile string)
 		}
 	}
 	if route == "proxy" || route == "vusa-proxy" {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 13*time.Second)
 		defer cancel()
 		resp, err = rt.proxyResolver.query(ctx, query)
+		if err != nil {
+			log.Printf("%s primary DoH failed: %v", proto, err)
+			resp, err = rt.backupResolver.query(ctx, query)
+		}
 	} else {
-		resp, err = queryUDP(context.Background(), query, rt.directCfg())
+		ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
+		defer cancel()
+		resp, err = rt.directResolver.query(ctx, query)
+		if err != nil {
+			log.Printf("%s direct DoH failed: %v", proto, err)
+			resp, err = rt.backupResolver.query(ctx, query)
+		}
+		if err != nil {
+			log.Printf("%s backup DoH failed: %v", proto, err)
+			resp, err = queryUDP(ctx, query, rt.directCfg())
+		}
 	}
 	if err != nil {
 		log.Printf("%s %s %s error %s qtype=%d %s", proto, cid.ID, route, q.Name, q.QType, err.Error())

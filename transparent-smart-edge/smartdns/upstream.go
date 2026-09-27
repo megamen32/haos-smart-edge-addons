@@ -18,6 +18,39 @@ type proxyDoHResolver struct {
 	endpoint string
 }
 
+// newDirectDoHResolver pins the bootstrap address, so DNS cannot recurse through
+// the LAN resolver while establishing the first HTTPS connection.
+func newDirectDoHResolver(doh proxyDoHCfg) (*proxyDoHResolver, error) {
+	if doh.URLHost == "" || net.ParseIP(doh.BootstrapIP) == nil {
+		return nil, fmt.Errorf("direct DoH requires a hostname and bootstrap IP")
+	}
+	if doh.Path == "" {
+		doh.Path = "/dns-query"
+	}
+	if doh.Port == 0 {
+		doh.Port = 443
+	}
+	if doh.TimeoutMS <= 0 {
+		doh.TimeoutMS = 3000
+	}
+	dialer := &net.Dialer{Timeout: time.Duration(doh.TimeoutMS) * time.Millisecond, KeepAlive: 30 * time.Second}
+	bootstrap := net.JoinHostPort(doh.BootstrapIP, strconv.Itoa(doh.Port))
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "tcp", bootstrap)
+		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConnsPerHost:   16,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   time.Duration(doh.TimeoutMS) * time.Millisecond,
+		ResponseHeaderTimeout: time.Duration(doh.TimeoutMS) * time.Millisecond,
+	}
+	return &proxyDoHResolver{
+		client:   &http.Client{Transport: transport, Timeout: time.Duration(doh.TimeoutMS) * time.Millisecond},
+		endpoint: "https://" + net.JoinHostPort(doh.URLHost, strconv.Itoa(doh.Port)) + doh.Path,
+	}, nil
+}
+
 // newProxyDoHResolver constructs a pooled DoH client routed through an HTTP proxy.
 func newProxyDoHResolver(doh proxyDoHCfg, proxy upstreamCfg) (*proxyDoHResolver, error) {
 	if doh.URLHost == "" {

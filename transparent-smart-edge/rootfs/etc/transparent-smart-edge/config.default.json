@@ -11,9 +11,22 @@
   "localDefaultRoute": "direct",
   "rules": [],
   "directDns": {
-    "host": "1.1.1.1",
+    "host": "9.9.9.9",
     "port": 53,
+    "timeoutMs": 2000
+  },
+  "directDoh": {
+    "urlHost": "dns.quad9.net",
+    "bootstrapIp": "9.9.9.9",
+    "path": "/dns-query",
+    "port": 443,
     "timeoutMs": 3000
+  },
+  "backupDoh": {
+    "urlHost": "dns.google",
+    "path": "/dns-query",
+    "port": 443,
+    "timeoutMs": 5000
   },
   "edgeProfiles": {
     "local": {
