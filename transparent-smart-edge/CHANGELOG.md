@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.22
+
+- Add the `ai-route` selector (fi-helsinki, de-regional, us-regional) with an
+  AI domain rule so transparent DLP traffic to OpenAI/Anthropic stops landing
+  on randomly picked slow US exits.
+- Add `route-health.sh`: per-lane end-to-end probes scored by EWMA latency
+  and error streaks, automatic selector healing, switching after a sustained
+  30% improvement, and a sing-box restart when every lane fails repeatedly.
+- Build sing-box with `with_clash_api`; controller bound to `127.0.0.1:9095`
+  inside the add-on only.
+- New option `ai_route_enabled` (default true).
+- Align default `singbox_outbound_tag`/`telegram_outbound_tag` with the
+  deployed `world-auto`/`telegram-auto` values.
+
 ## 0.1.9
 
 - Add a Telegram TPROXY policy watchdog that re-applies the idempotent nft
