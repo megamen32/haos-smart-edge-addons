@@ -37,18 +37,26 @@ SING_BOX_BIN="$work_dir/sing-box" VALIDATOR_BIN="$validator" \
   bash "$importer" "$work_dir/source.json" de-regional "$work_dir/generated.json" 23128 us-regional
 
 jq -e '
-  ([.outbounds[].tag] | sort) == (["de-cdn","de-direct","de-regional","fi-helsinki","us-cdn","us-reality","us-regional"] | sort)
+  ([.outbounds[].tag] | sort) == (["de-cdn","de-direct","de-regional","us-cdn","us-reality","us-regional"] | sort)
   and .route.final == "de-regional"
   and ([.outbounds[] | select(.tag == "de-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
   and ([.outbounds[] | select(.tag == "us-regional" and .type == "urltest" and (.outbounds | length) == 2)] | length) == 1
 ' "$work_dir/generated.json" >/dev/null
 
+# The importer bootstraps only the primary and Telegram groups; the panel
+# renders the full source with every regional outbound. Add the Finland leaf
+# from the source fixture so the runtime stage exercises the fi lane too.
+jq --slurpfile src "$work_dir/source.json" \
+  '.outbounds += ([$src[0].outbounds[] | select(.tag == "fi-helsinki" or .tag == "direct")])' \
+  "$work_dir/generated.json" >"$work_dir/generated-full.json"
+mv "$work_dir/generated-full.json" "$work_dir/generated.json"
+
 printf '%s\n' '{"users":[{"username":"test-user","password":"test-password"}]}' >"$work_dir/proxy-users.json"
 
-bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json"
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json" true
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct
+  bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct true
 
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127 and ((.users // []) | length) == 0)] | length) == 1
@@ -69,4 +77,31 @@ jq -e '
   and ([.route.rules[] | select(.outbound == "direct" and ((.inbound // []) | index("wan-ru-http")))] | length) == 1
 ' "$work_dir/runtime.json" >/dev/null
 
-printf 'transport auto-selection contract: PASS\n'
+
+jq -e '
+  (.outbounds[] | select(.tag == "ai-route")) as $sel
+  | $sel.type == "selector"
+  and ($sel.outbounds == ["fi-helsinki","de-regional","us-regional"])
+  and ($sel.default == "fi-helsinki")
+  and (.experimental.clash_api.external_controller == "127.0.0.1:9095")
+  and ((([.outbounds[].tag] as $tags | [$sel.outbounds[] | select(. as $m | ($tags | index($m)) == null)] | length)) == 0)
+' "$work_dir/runtime.json" >/dev/null
+
+jq -e '
+  (.route.rules | to_entries | map(select(.value.outbound == "ai-route")) | first | .key) as $ai
+  | (.route.rules | to_entries | map(select(((.value.inbound // []) | index("lan-ru-http")) or ((.value.inbound // []) | index("wan-ru-http")))) | map(.key) | max) as $lane_max
+  | (.route.rules | to_entries | map(select((.value.inbound // []) | index("telegram-tproxy"))) | first | .key) as $tg
+  | $ai > $lane_max and $ai < $tg
+' "$work_dir/runtime.json" >/dev/null
+
+jq -e '([.route.rules[] | select(.outbound == "ai-route" and ((.domain_suffix // []) | index("openai.com")) and ((.domain_suffix // []) | index("anthropic.com")))] | length) == 1' "$work_dir/runtime.json" >/dev/null
+
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime-noai.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json" false
+
+jq -e '
+  ([.outbounds[] | select(.tag == "ai-route")] | length) == 0
+  and ((.experimental.clash_api // null) == null)
+  and ([.route.rules[] | select(.outbound == "ai-route")] | length) == 0
+' "$work_dir/runtime-noai.json" >/dev/null
+
+printf 'transport auto-selection contract: PASS (ai-route selector, clash api, rule order, disabled path)\n'

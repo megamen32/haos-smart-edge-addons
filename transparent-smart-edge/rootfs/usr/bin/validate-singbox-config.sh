@@ -18,6 +18,8 @@ lan_fi_outbound_tag="${13:-fi-helsinki}"
 lan_ru_enabled="${14:-false}"
 lan_ru_port="${15:-3130}"
 lan_ru_outbound_tag="${16:-direct}"
+ai_route_enabled="${17:-false}"
+clash_api_address="${CLASH_API_ADDRESS:-127.0.0.1:9095}"
 singbox_bin="${SING_BOX_BIN:-/usr/bin/sing-box}"
 
 if [[ ! -s "$config_path" ]]; then
@@ -41,6 +43,8 @@ if ! jq -e \
     --argjson lan_ru_enabled "$lan_ru_enabled" \
     --argjson lan_ru_port "$lan_ru_port" \
     --arg lan_ru_tag "$lan_ru_outbound_tag" \
+    --argjson ai_enabled "$ai_route_enabled" \
+    --arg clash_api "$clash_api_address" \
     '. as $root
      | def by_tag($wanted): [$root.outbounds[]? | select(.tag == $wanted)];
      def valid_leaf:
@@ -92,7 +96,14 @@ if ! jq -e \
             and ([.route.rules[]? | select(.outbound == $lan_ru_tag and ((.inbound // []) | index("wan-ru-http")))] | length) == 1
           else ([.inbounds[]? | select(.tag == "lan-ru-http" or .tag == "wan-ru-http")] | length) == 0 end)
      and (if ([.inbounds[]? | select(.tag == "telegram-tproxy")] | length) == 0 then true
-          else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)' \
+          else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)
+     and (if $ai_enabled then
+            ([.outbounds[]? | select(.tag == "ai-route" and .type == "selector")] | length) == 1
+            and (([.outbounds[]? | select(.tag == "ai-route")] | first | .outbounds | length) > 0)
+            and (([.outbounds[]? | select(.tag == "ai-route")] | first | .outbounds | map(select(. as $m | (by_tag($m) | length) == 0)) | length) == 0)
+            and (.experimental.clash_api.external_controller == $clash_api)
+            and ([.route.rules[]? | select(.outbound == "ai-route" and ((.domain_suffix // []) | index("openai.com")))] | length) == 1
+          else ([.outbounds[]? | select(.tag == "ai-route")] | length) == 0 end)' \
     "$config_path" >/dev/null; then
     printf 'sing-box config does not expose the required automatic transport groups and Telegram route\n' >&2
     exit 2
@@ -103,4 +114,4 @@ if ! "$singbox_bin" check -c "$config_path" >/dev/null 2>&1; then
     exit 2
 fi
 
-printf 'sing-box transport config valid: outbound=%s telegram=%s loopback_port=%s\n' "$outbound_tag" "$telegram_outbound_tag" "$listen_port"
+printf 'sing-box transport config valid: outbound=%s telegram=%s loopback_port=%s ai_route=%s\n' "$outbound_tag" "$telegram_outbound_tag" "$listen_port" "$ai_route_enabled"
