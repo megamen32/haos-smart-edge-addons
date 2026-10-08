@@ -9,13 +9,17 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 )
 
 // proxyDoHResolver keeps HTTP proxy, CONNECT and TLS sessions reusable.
 type proxyDoHResolver struct {
-	client   *http.Client
-	endpoint string
+	client     *http.Client
+	breakerMu  sync.Mutex
+	failures   int
+	retryAfter time.Time
+	endpoint   string
 }
 
 // newProxyDoHResolver constructs a pooled DoH client routed through an HTTP proxy.
@@ -59,6 +63,28 @@ func newProxyDoHResolver(doh proxyDoHCfg, proxy upstreamCfg) (*proxyDoHResolver,
 
 // query resolves one DNS wire message while reusing pooled upstream connections.
 func (resolver *proxyDoHResolver) query(ctx context.Context, message []byte) ([]byte, error) {
+	resolver.breakerMu.Lock()
+	if time.Now().Before(resolver.retryAfter) {
+		resolver.breakerMu.Unlock()
+		return nil, fmt.Errorf("upstream circuit open until %s", resolver.retryAfter.Format(time.RFC3339))
+	}
+	resolver.breakerMu.Unlock()
+	result, err := resolver.queryOnce(ctx, message)
+	resolver.breakerMu.Lock()
+	if err != nil {
+		resolver.failures++
+		if resolver.failures >= 3 {
+			resolver.retryAfter = time.Now().Add(30 * time.Second)
+			resolver.failures = 0
+		}
+	} else {
+		resolver.failures = 0
+		resolver.retryAfter = time.Time{}
+	}
+	resolver.breakerMu.Unlock()
+	return result, err
+}
+func (resolver *proxyDoHResolver) queryOnce(ctx context.Context, message []byte) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, resolver.endpoint, bytes.NewReader(message))
 	if err != nil {
 		return nil, err

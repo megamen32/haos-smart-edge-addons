@@ -40,3 +40,7 @@ DNS and statically forward DNS/TCP edge traffic to `192.168.2.101`.
 ## SmartDNS cache improvements (0.1.20)
 
 The HAOS SmartDNS cache holds up to 50,000 entries and 64 MiB of stored DNS payload/key data. Individual replies over 8 KiB bypass the cache. LRU eviction, in-flight request coalescing, RFC 2308 SOA-bounded negative caching, and refresh-ahead for frequently used entries are enabled. Statistics (`entries`, `bytes`, `hits`, `misses`, `coalesced`, `refreshes`, `evictions`) are logged every five minutes without query names. Cache snapshots are written atomically to `/data/smartdns-cache-v1.json` with 0600 permissions; records and their remaining TTLs survive restarts only when the complete config fingerprint matches. Policy reloads invalidate the in-memory cache, and responses from earlier policy generations cannot refill it. OpenWrt dnsmasq configuration and DLP routing rules are unchanged.
+
+## DoH upstream circuit breaker (0.1.21)
+
+After three consecutive DoH transport failures, the failed upstream is bypassed for 30 seconds. Queries continue through the existing backup DoH and direct UDP fallback; one retry after the cooldown checks recovery. This reduces repeated delays caused by Quad9 upstream unexpected EOF errors. Existing DLP rules and routing profiles are unchanged.
