@@ -28,6 +28,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
@@ -41,6 +42,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -226,7 +228,7 @@ func newRuntime() *runtime {
 		localProxyDomains: map[string]bool{},
 		vusaProxyDomains:  map[string]bool{},
 		edgeProfiles:      map[string]*smartEdge{},
-		cache:             newDNSCache(10000),
+		cache:             newDNSCache(50000),
 		hardDomains:       map[string]bool{},
 		clientsByIP:       map[string]string{},
 		staticA:           map[string][]string{},
@@ -507,6 +509,9 @@ func (rt *runtime) reloadPolicy(path string) error {
 	rt.defaultRoute = next.defaultRoute
 	rt.localDefaultRoute = next.localDefaultRoute
 	rt.rules = next.rules
+	if rt.cache != nil {
+		rt.cache.clear()
+	}
 	rt.mu.Unlock()
 	return nil
 }
@@ -1027,46 +1032,36 @@ func (rt *runtime) resolve(query []byte, clientID, proto, reqIP, profile string)
 		}
 	}
 
-	var resp []byte
 	cacheKey := dnsCacheKey(q, route, profile)
-	if rt.cache != nil {
-		if cached, found := rt.cache.get(cacheKey, query, time.Now()); found {
-			log.Printf("%s %s %s cache %s qtype=%d", proto, cid.ID, route, q.Name, q.QType)
-			return cached, nil
+	lookup := func(request []byte) ([]byte, error) {
+		timeout := 11 * time.Second
+		if route == "proxy" || route == "vusa-proxy" {
+			timeout = 16 * time.Second
 		}
-	}
-	if route == "proxy" || route == "vusa-proxy" {
-		ctx, cancel := context.WithTimeout(context.Background(), 16*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		resp, err = rt.proxyResolver.query(ctx, query)
+		response, err := rt.proxyResolver.query(ctx, request)
 		if err != nil {
 			log.Printf("%s primary DoH failed: %v", proto, err)
-			resp, err = rt.backupResolver.query(ctx, query)
+			response, err = rt.backupResolver.query(ctx, request)
 		}
 		if err != nil {
 			log.Printf("%s backup DoH failed: %v; trying direct UDP", proto, err)
-			resp, err = queryUDP(ctx, query, rt.directCfg())
+			response, err = queryUDP(ctx, request, rt.directCfg())
 		}
+		return response, err
+	}
+	var resp []byte
+	if rt.cache != nil {
+		resp, err = rt.cache.fetch(cacheKey, query, lookup)
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), 11*time.Second)
-		defer cancel()
-		resp, err = rt.proxyResolver.query(ctx, query)
-		if err != nil {
-			log.Printf("%s primary DoH failed: %v", proto, err)
-			resp, err = rt.backupResolver.query(ctx, query)
-		}
-		if err != nil {
-			log.Printf("%s backup DoH failed: %v", proto, err)
-			resp, err = queryUDP(ctx, query, rt.directCfg())
-		}
+		resp, err = lookup(query)
 	}
 	if err != nil {
-		log.Printf("%s %s %s error %s qtype=%d %s", proto, cid.ID, route, q.Name, q.QType, err.Error())
+		log.Printf("%s %s %s error %s qtype=%d %s", proto, cid.ID, route, q.Name, q.QType, err)
 		return makeErrorResponse(query, 2), nil
 	}
-	if rt.cache != nil {
-		rt.cache.put(cacheKey, resp, time.Now())
-	}
+
 	log.Printf("%s %s %s resolve %s qtype=%d %dms", proto, cid.ID, route, q.Name, q.QType, time.Since(start).Milliseconds())
 	return resp, nil
 }
@@ -1545,7 +1540,11 @@ func (rt *runtime) applyRuntime(payload struct {
 	}
 	rt.mu.Lock()
 	if payload.Policy != nil {
+		changed := !reflect.DeepEqual(rt.rules, payload.Policy.Rules) || (payload.Policy.DefaultRoute != "" && rt.defaultRoute != payload.Policy.DefaultRoute) || (payload.Policy.LocalDefaultRoute != "" && rt.localDefaultRoute != payload.Policy.LocalDefaultRoute)
 		rt.rules = append([]routingRule(nil), payload.Policy.Rules...)
+		if changed && rt.cache != nil {
+			rt.cache.clear()
+		}
 		if payload.Policy.DefaultRoute != "" {
 			rt.policyDefault = payload.Policy.DefaultRoute
 			rt.defaultRoute = payload.Policy.DefaultRoute
@@ -1710,6 +1709,39 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 	currentConfig = cfg
+	// The snapshot is bound to the complete on-disk configuration. A config
+	// change (including DLP/static rules or upstream) invalidates persisted DNS.
+	cachePath := os.Getenv("SMARTDNS_CACHE_FILE")
+	if cachePath == "" {
+		cachePath = "/data/smartdns-cache-v1.json"
+	}
+	configBytes, hashErr := os.ReadFile(cfgPath)
+	if hashErr != nil {
+		log.Fatalf("config fingerprint: %v", hashErr)
+	}
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(configBytes))
+	if err := rt.cache.loadSnapshot(cachePath, fingerprint); err != nil {
+		log.Printf("dns cache restore skipped: %v", err)
+	}
+	go func() {
+		tick := time.NewTicker(5 * time.Minute)
+		defer tick.Stop()
+		for range tick.C {
+			log.Printf("dns cache stats: %+v", rt.cache.stats())
+			// Disk snapshot cannot silently outlive a live config update.
+			latest, e := os.ReadFile(cfgPath)
+			if e != nil {
+				continue
+			}
+			active := fmt.Sprintf("%x", sha256.Sum256(latest))
+			if active != fingerprint {
+				continue
+			} // never persist a cache against an unapplied config
+			if err := rt.cache.saveSnapshot(cachePath, active); err != nil {
+				log.Printf("dns cache snapshot: %v", err)
+			}
+		}
+	}()
 	edgeAuthTTLMS = int64(cfg.EdgeAuth.TTLMs)
 	if edgeAuthTTLMS == 0 {
 		edgeAuthTTLMS = 120000

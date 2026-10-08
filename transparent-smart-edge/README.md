@@ -36,3 +36,7 @@ After AdGuard and
 Nginx Proxy Manager release their listeners, change `dns_port` to `53` and
 `edge_port` to `443`. The router can then keep advertising `192.168.2.1` for
 DNS and statically forward DNS/TCP edge traffic to `192.168.2.101`.
+
+## SmartDNS cache improvements (0.1.20)
+
+The HAOS SmartDNS cache holds up to 50,000 entries and 64 MiB of stored DNS payload/key data. Individual replies over 8 KiB bypass the cache. LRU eviction, in-flight request coalescing, RFC 2308 SOA-bounded negative caching, and refresh-ahead for frequently used entries are enabled. Statistics (`entries`, `bytes`, `hits`, `misses`, `coalesced`, `refreshes`, `evictions`) are logged every five minutes without query names. Cache snapshots are written atomically to `/data/smartdns-cache-v1.json` with 0600 permissions; records and their remaining TTLs survive restarts only when the complete config fingerprint matches. Policy reloads invalidate the in-memory cache, and responses from earlier policy generations cannot refill it. OpenWrt dnsmasq configuration and DLP routing rules are unchanged.
