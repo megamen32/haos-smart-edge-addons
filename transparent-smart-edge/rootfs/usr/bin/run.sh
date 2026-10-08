@@ -47,6 +47,7 @@ LAN_FI_PROXY_OUTBOUND_TAG="$(option lan_fi_proxy_outbound_tag fi-helsinki)"
 LAN_RU_PROXY_ENABLED="$(option lan_ru_proxy_enabled true)"
 LAN_RU_PROXY_PORT="$(option lan_ru_proxy_port 3130)"
 LAN_RU_PROXY_OUTBOUND_TAG="$(option lan_ru_proxy_outbound_tag direct)"
+AI_ROUTE_ENABLED="$(option ai_route_enabled true)"
 
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
@@ -87,10 +88,11 @@ if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
       "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" \
       "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" \
       "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" \
-      "$PROXY_USERS_FILE"
+      "$PROXY_USERS_FILE" \
+      "$AI_ROUTE_ENABLED"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" "$AI_ROUTE_ENABLED"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2
@@ -136,6 +138,7 @@ singbox_pid=""
 if [[ "$singbox_enabled" == 1 ]]; then
     /usr/bin/sing-box run -c "$SINGBOX_RUNTIME_PATH" &
     singbox_pid="$!"
+    export SINGBOX_PID="$singbox_pid"
 fi
 /usr/bin/smart-edge &
 smart_edge_pid="$!"
@@ -148,6 +151,9 @@ cleanup() {
     if [[ -n "$tproxy_watchdog_pid" ]]; then
         pids+=("$tproxy_watchdog_pid")
     fi
+    if [[ -n "${route_health_pid:-}" ]]; then
+        pids+=("$route_health_pid")
+    fi
     kill "${pids[@]}" 2>/dev/null || true
     wait "${pids[@]}" 2>/dev/null || true
 }
@@ -158,6 +164,19 @@ if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then
     /usr/bin/telegram-tproxy-policy.sh "$TELEGRAM_TPROXY_PORT" --apply
     /usr/bin/telegram-tproxy-watchdog.sh "$TELEGRAM_TPROXY_PORT" &
     tproxy_watchdog_pid="$!"
+fi
+
+route_health_pid=""
+if [[ "$singbox_enabled" == 1 && "$AI_ROUTE_ENABLED" == true ]]; then
+    (
+        while true; do
+            /usr/bin/route-health.sh
+            status="$?"
+            printf 'route-health: loop exited with status %s; restarting in 5s\n' "$status" >&2
+            sleep 5
+        done
+    ) &
+    route_health_pid="$!"
 fi
 
 ready=0
@@ -187,6 +206,9 @@ if [[ -n "$singbox_pid" ]]; then
 fi
 if [[ -n "$tproxy_watchdog_pid" ]]; then
     child_pids+=("$tproxy_watchdog_pid")
+fi
+if [[ -n "${route_health_pid:-}" ]]; then
+    child_pids+=("$route_health_pid")
 fi
 wait -n "${child_pids[@]}"
 status="$?"
