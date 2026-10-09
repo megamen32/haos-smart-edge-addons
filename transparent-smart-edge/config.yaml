@@ -66,4 +66,4 @@ schema:
   ai_route_enabled: "bool"
 
 panel_icon: "mdi:shield-link-variant"
-image: "ghcr.io/megamen32/haos-smart-edge"
+image: "ghcr.io/megamen32/vpn-panel-haos-smart-edge"
