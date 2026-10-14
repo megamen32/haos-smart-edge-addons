@@ -6,8 +6,8 @@
 # the selector via the local clash API when:
 #   * the currently selected lane starts erroring (heal), or
 #   * another proven lane is >=30% faster for two consecutive rounds.
-# If every lane fails for several rounds it restarts sing-box (the run.sh
-# supervisor then restarts the add-on with fresh state).
+# The same controller also verifies native Telegram and steers its selector.
+# Upstream failure never restarts the healthy DNS/TLS stack.
 
 set -uo pipefail
 
@@ -22,12 +22,18 @@ CLASH_API="${ROUTE_HEALTH_CLASH_API:-http://127.0.0.1:9095}"
 SELECTOR="${ROUTE_HEALTH_SELECTOR:-ai-route}"
 STATE_PATH="${ROUTE_HEALTH_STATE:-/data/route-health-state.json}"
 INTERVAL="${ROUTE_HEALTH_INTERVAL:-45}"
-PROBE_URL="${ROUTE_HEALTH_PROBE_URL:-https://api.openai.com/v1/models}"
+PROBE_URL="${ROUTE_HEALTH_PROBE_URL:-https://discord.com/api/v10/gateway}"
 CURL="${CURL_BIN:-curl}"
 ALL_FAIL_ROUNDS_TO_RESTART="${ROUTE_HEALTH_ALL_FAIL_ROUNDS:-3}"
 SWITCH_RATIO_NUM="${ROUTE_HEALTH_SWITCH_RATIO_NUM:-7}"
 SWITCH_RATIO_DEN="${ROUTE_HEALTH_SWITCH_RATIO_DEN:-10}"
 ONCE="${ROUTE_HEALTH_ONCE:-false}"
+TELEGRAM_PROBE="${ROUTE_HEALTH_TELEGRAM_PROBE:-/usr/bin/route-probe}"
+TELEGRAM_ENABLED="${ROUTE_HEALTH_TELEGRAM_ENABLED:-$(option telegram_tproxy_enabled false)}"
+TELEGRAM_STATE="${ROUTE_HEALTH_TELEGRAM_STATE:-/data/telegram-route-health-state.json}"
+AI_ENABLED="${ROUTE_HEALTH_AI_ENABLED:-$(option ai_route_enabled true)}"
+PROBE_KIND=ai
+STICKY=false
 
 lanes_default="$(option lan_fi_proxy_outbound_tag fi-helsinki):$(option lan_fi_proxy_port 3129) $(option lan_de_proxy_outbound_tag de-regional):$(option lan_de_proxy_port 3128) $(option lan_us_proxy_outbound_tag us-regional):$(option lan_us_proxy_port 3127)"
 LANES="${ROUTE_HEALTH_LANES:-$lanes_default}"
@@ -53,10 +59,14 @@ lane_field() { # state tag field
 
 probe_lane() { # port -> "ok <seconds>" | "err"
     local out code
+    if [[ "$PROBE_KIND" == telegram ]]; then
+        "$TELEGRAM_PROBE" -proxy "127.0.0.1:$1" -timeout 3s 2>/dev/null || printf 'err'
+        return
+    fi
     out="$("$CURL" -s -o /dev/null -w '%{http_code} %{time_total}' -x "http://127.0.0.1:$1" -m 6 "$PROBE_URL" 2>/dev/null)" || { printf 'err'; return; }
     code="${out%% *}"
     case "$code" in
-        2*|3*|4*) printf 'ok %s' "${out##* }" ;;
+        2*) printf 'ok %s' "${out##* }" ;;
         *) printf 'err' ;;
     esac
 }
@@ -135,16 +145,7 @@ round() {
         state="$(jq --argjson a "$all_fail" '.all_fail_rounds = $a' <<<"$state")"
         state_write "$state"
         log "round: $line| ALL LANES FAILING (${all_fail}/${ALL_FAIL_ROUNDS_TO_RESTART})"
-        if (( all_fail >= ALL_FAIL_ROUNDS_TO_RESTART )); then
-            local sbp
-            sbp="$(pid_of_singbox)"
-            if [[ -n "$sbp" ]]; then
-                log "AUTOHEAL: every lane failed ${all_fail} rounds; restarting sing-box (pid ${sbp})"
-                kill -TERM "$sbp" 2>/dev/null || true
-            fi
-            state="$(jq '.all_fail_rounds = 0' <<<"$state")"
-            state_write "$state"
-        fi
+        log "${SELECTOR}: upstreams unavailable; preserving the local stack and existing streams"
         return 0
     fi
     state="$(jq '.all_fail_rounds = 0' <<<"$state")"
@@ -162,7 +163,7 @@ round() {
     action="keep"
     if [[ -z "$cur_tag" || "${cur_oks:-0}" -eq 0 ]]; then
         action="switch"
-    elif [[ "$best_tag" != "$cur_tag" ]] && (( best_oks >= 2 )); then
+    elif [[ "$STICKY" != true && "$best_tag" != "$cur_tag" ]] && (( best_oks >= 2 )); then
         if (( cur_score == 0 )) || (( SWITCH_RATIO_NUM * best_score <= SWITCH_RATIO_DEN * cur_score )); then
             action="switch"
         fi
@@ -181,6 +182,15 @@ round() {
     state_write "$state"
 }
 
+telegram_round() {
+    local SELECTOR=telegram-route STATE_PATH="$TELEGRAM_STATE" PROBE_KIND=telegram STICKY=true
+    if [[ ! -x "$TELEGRAM_PROBE" ]]; then
+        log "native Telegram probe unavailable; selection is not verified"
+        return 1
+    fi
+    round
+}
+
 main() {
     log "started: lanes=[${LANES// /, }] probe=${PROBE_URL} every ${INTERVAL}s"
     if ! wait_for_clash; then
@@ -193,7 +203,8 @@ main() {
         clash_select "$saved" && log "restored saved selection: ${saved}"
     fi
     while true; do
-        round
+        if [[ "$AI_ENABLED" == true ]]; then round; fi
+        if [[ "$TELEGRAM_ENABLED" == true ]]; then telegram_round; fi
         [[ "$ONCE" == true ]] && break
         sleep "$INTERVAL"
     done

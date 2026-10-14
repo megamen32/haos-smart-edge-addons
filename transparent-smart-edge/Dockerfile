@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/smartdns .
 WORKDIR /build/smartedge
 COPY smartedge/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/smart-edge .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/route-probe ./cmd/route-probe
 
 # VLESS, TLS, WebSocket, HTTPUpgrade, and Reality are built into sing-box.
 # uTLS is needed by the imported regional groups; with_clash_api enables the
@@ -30,6 +31,7 @@ RUN apk add --no-cache bash iproute2 jq netcat-openbsd nftables
 
 COPY --from=builder /out/smartdns /usr/bin/smartdns
 COPY --from=builder /out/smart-edge /usr/bin/smart-edge
+COPY --from=builder /out/route-probe /usr/bin/route-probe
 COPY --from=builder /go/bin/sing-box /usr/bin/sing-box
 COPY rootfs /
 

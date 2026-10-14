@@ -50,7 +50,7 @@ jq \
     {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:$port};
   def wan_http($tag; $port):
     {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:($port + 10000),users:$proxy_auth[0].users};
-  .outbounds = ((.outbounds // []) | map(select(.tag != "ai-route")))
+  .outbounds = ((.outbounds // []) | map(select(.tag != "ai-route" and .tag != "telegram-route")))
   | .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy" and .tag != "lan-us-http" and .tag != "lan-de-http" and .tag != "lan-fi-http" and .tag != "lan-ru-http" and .tag != "wan-us-http" and .tag != "wan-de-http" and .tag != "wan-fi-http" and .tag != "wan-ru-http")))
   | .route.rules = ((.route.rules // []) | map(select(
       ((.inbound // []) | index("telegram-tproxy")) == null
@@ -62,18 +62,24 @@ jq \
       and ((.inbound // []) | index("wan-de-http")) == null
       and ((.inbound // []) | index("wan-fi-http")) == null
       and ((.inbound // []) | index("wan-ru-http")) == null
-      and ((.outbound // "") != "ai-route")
+      and ((.outbound // "") != "ai-route" and (.outbound // "") != "telegram-route")
     )))
   | if $telegram_enabled then
-      .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$telegram_port}]
-      | .route.rules = ([{inbound:["telegram-tproxy"],outbound:$telegram_outbound}] + .route.rules)
+      ([$lan_de_outbound, $lan_us_outbound, $lan_fi_outbound] | unique) as $wanted
+      | ([.outbounds[]?.tag]) as $known
+      | ([$wanted[] | select(. as $t | ($known | index($t)) != null)]) as $members
+      | if ($members | length) == 0 then error("no native Telegram route candidates") else . end
+      | .outbounds += [{type:"selector",tag:"telegram-route",outbounds:$members,default:$members[0],interrupt_exist_connections:false}]
+      | .experimental = ((.experimental // {}) + {clash_api:{external_controller:$clash_api}})
+      | .inbounds += [{type:"tproxy",tag:"telegram-tproxy",listen:"0.0.0.0",listen_port:$telegram_port}]
+      | .route.rules = ([{inbound:["telegram-tproxy"],outbound:"telegram-route"}] + .route.rules)
     else . end
   | if $ai_route_enabled then
       ([$lan_fi_outbound, $lan_de_outbound, $lan_us_outbound] | map(select(. != "")) | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $ai_candidates
       | ([(.outbounds // [])[]? | .tag]) as $known_tags
       | ([$ai_candidates[] | select(. as $t | ($known_tags | index($t)) != null)]) as $ai_members
       | if ($ai_members | length) > 0 then
-          .outbounds += [{type:"selector", tag:"ai-route", outbounds:$ai_members, default:$ai_members[0]}]
+          .outbounds += [{type:"selector", tag:"ai-route", outbounds:$ai_members, default:$ai_members[0],interrupt_exist_connections:false}]
           | .experimental = ((.experimental // {}) + {clash_api:{external_controller:$clash_api}})
           | .route.rules = ([{domain_suffix:($ai_domains | split(",")), outbound:"ai-route"}] + .route.rules)
         else . end

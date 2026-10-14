@@ -67,6 +67,11 @@ if ! jq -e \
      and valid_target($tag)
      and .route.final == $tag
      and (if $telegram_tag == "" then true else valid_target($telegram_tag) end)
+     and (if any(.inbounds[]?; .tag == "telegram-tproxy") then
+            ([.outbounds[]? | select(.tag == "telegram-route" and .type == "selector" and .interrupt_exist_connections == false)] | length) == 1
+            and all((by_tag("telegram-route")[0].outbounds[]); valid_target(.))
+            and ([.route.rules[]? | select(.outbound == "telegram-route" and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1
+          else true end)
      and (if $lan_us_enabled then
             valid_target($lan_us_tag)
             and ([.inbounds[]? | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == $lan_us_port and ((.users // []) | length) == 0)] | length) == 1
@@ -96,7 +101,7 @@ if ! jq -e \
             and ([.route.rules[]? | select(.outbound == $lan_ru_tag and ((.inbound // []) | index("wan-ru-http")))] | length) == 1
           else ([.inbounds[]? | select(.tag == "lan-ru-http" or .tag == "wan-ru-http")] | length) == 0 end)
      and (if ([.inbounds[]? | select(.tag == "telegram-tproxy")] | length) == 0 then true
-          else ([.route.rules[]? | select(.outbound == $telegram_tag and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)
+          else ([.route.rules[]? | select(.outbound == "telegram-route" and ((.inbound // []) | index("telegram-tproxy")))] | length) == 1 end)
      and (if $ai_enabled then
             ([.outbounds[]? | select(.tag == "ai-route" and .type == "selector")] | length) == 1
             and (([.outbounds[]? | select(.tag == "ai-route")] | first | .outbounds | length) > 0)

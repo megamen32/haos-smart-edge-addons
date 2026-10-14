@@ -167,7 +167,7 @@ if [[ "$TELEGRAM_TPROXY_ENABLED" == true ]]; then
 fi
 
 route_health_pid=""
-if [[ "$singbox_enabled" == 1 && "$AI_ROUTE_ENABLED" == true ]]; then
+if [[ "$singbox_enabled" == 1 && ( "$AI_ROUTE_ENABLED" == true || "$TELEGRAM_TPROXY_ENABLED" == true ) ]]; then
     (
         while true; do
             /usr/bin/route-health.sh

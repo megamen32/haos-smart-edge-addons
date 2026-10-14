@@ -10,7 +10,7 @@ runtime_configurer="$repo_dir/transparent-smart-edge/rootfs/usr/bin/configure-ru
 
 rm -rf "$work_dir"
 mkdir -p "$work_dir"
-trap 'rm -rf "$work_dir"' EXIT INT TERM
+if [[ ${KEEP_TEST_TMP:-0} != 1 ]]; then trap 'rm -rf "$work_dir"' EXIT INT TERM; fi
 
 cat >"$work_dir/source.json" <<'JSON'
 {
@@ -100,7 +100,8 @@ bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime-noai.js
 
 jq -e '
   ([.outbounds[] | select(.tag == "ai-route")] | length) == 0
-  and ((.experimental.clash_api // null) == null)
+  and (.experimental.clash_api.external_controller == "127.0.0.1:9095")
+  and ([.outbounds[] | select(.tag == "telegram-route" and .interrupt_exist_connections == false)] | length) == 1
   and ([.route.rules[] | select(.outbound == "ai-route")] | length) == 0
 ' "$work_dir/runtime-noai.json" >/dev/null
 

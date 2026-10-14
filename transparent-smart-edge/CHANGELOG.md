@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.24
+
+- One existing route-health controller verifies Discord HTTPS and native Telegram resPQ, and selects working routes automatically.
+- Preserve established connections across selector changes; upstream-only outages no longer restart the healthy local stack.
+- Keep native Telegram on its healthy route until a real probe fails, with bounded two-DC checks.
+
 ## 0.1.22
 
 - Add the `ai-route` selector (fi-helsinki, de-regional, us-regional) with an

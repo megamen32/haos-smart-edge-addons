@@ -1,0 +1,1 @@
+{"mode":"yolo","model_profile":"balanced","commit_docs":true,"branching_strategy":"none","parallelization":false,"workflow":{"research":false,"plan_check":false,"verifier":true}}
