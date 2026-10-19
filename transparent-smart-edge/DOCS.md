@@ -13,6 +13,22 @@ Bezrabotnyi topology uses DNS port `53`, edge port `443`, router address
 `192.168.2.1`, and HAOS address `192.168.2.101`. Do not select final ports until
 the old listeners are stopped and `/data/singbox.json` validates.
 
+## LAN proxy lanes
+
+The add-on publishes one HTTP proxy per outbound lane on the LAN side. Each
+lane has an enable flag, a port, and an outbound tag:
+
+| Lane | Options | Port | Outbound tag |
+| --- | --- | --- | --- |
+| World | `lan_world_proxy_*` | 3125 | `world-auto` |
+| Finland | `lan_fi_proxy_*` | 3126 | `fi-helsinki` |
+| United States | `lan_us_proxy_*` | 3127 | `us-regional` |
+| Germany | `lan_de_proxy_*` | 3128 | `de-regional` |
+| Russia | `lan_ru_proxy_*` | 3130 | `direct` |
+
+A lane is published only while its `*_proxy_enabled` option is true. The
+sing-box internal listener stays on `23128` and is not a LAN lane.
+
 Runtime policy and credentials remain in the app data volume and are included
 in app backups; they are never downloaded from GitHub.
 

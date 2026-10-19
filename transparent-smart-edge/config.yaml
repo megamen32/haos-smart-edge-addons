@@ -1,5 +1,5 @@
 name: "Bezrabotnyi Transparent Smart Edge"
-version: "0.1.24"
+version: "0.1.25"
 slug: bezrabotnyi_transparent_smart_edge
 description: "Supervisor-managed VPN Panel SmartDNS, sing-box, and transparent TLS edge"
 url: "https://github.com/megamen32/haos-smart-edge-addons/tree/main/transparent-smart-edge"
@@ -25,6 +25,9 @@ options:
   require_singbox_config: false
   telegram_tproxy_enabled: false
   telegram_tproxy_port: 12555
+  lan_world_proxy_enabled: true
+  lan_world_proxy_port: 3125
+  lan_world_proxy_outbound_tag: "world-auto"
   lan_us_proxy_enabled: true
   lan_us_proxy_port: 3127
   lan_us_proxy_outbound_tag: "us-regional"
@@ -32,7 +35,7 @@ options:
   lan_de_proxy_port: 3128
   lan_de_proxy_outbound_tag: "de-regional"
   lan_fi_proxy_enabled: true
-  lan_fi_proxy_port: 3129
+  lan_fi_proxy_port: 3126
   lan_fi_proxy_outbound_tag: "fi-helsinki"
   lan_ru_proxy_enabled: true
   lan_ru_proxy_port: 3130
@@ -51,6 +54,9 @@ schema:
   require_singbox_config: "bool"
   telegram_tproxy_enabled: "bool"
   telegram_tproxy_port: "int(1,65535)"
+  lan_world_proxy_enabled: "bool"
+  lan_world_proxy_port: "int(1,65535)"
+  lan_world_proxy_outbound_tag: "str"
   lan_us_proxy_enabled: "bool"
   lan_us_proxy_port: "int(1,65535)"
   lan_us_proxy_outbound_tag: "str"
@@ -66,4 +72,11 @@ schema:
   ai_route_enabled: "bool"
 
 panel_icon: "mdi:shield-link-variant"
+# Built and published by the VPN Panel repository workflow
+# .github/workflows/build-haos-addon.yaml. No tag here: the supervisor
+# rejects a tagged image in config.yaml and appends `version:` itself.
+# Leaving this unset makes the supervisor build the add-on on a VM
+# with 3.7 GiB of RAM and no swap, which starves the live healthcheck badly
+# enough for the supervisor to recreate the running container. It used to
+# pin a fork's registry image, which made code changes here a silent no-op.
 image: "ghcr.io/megamen32/vpn-panel-haos-smart-edge"

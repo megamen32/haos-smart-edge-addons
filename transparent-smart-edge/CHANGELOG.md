@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.25
+
+- Add the `world` LAN proxy lane on port `3125` through the new options
+  `lan_world_proxy_enabled`, `lan_world_proxy_port`, and
+  `lan_world_proxy_outbound_tag` (default outbound tag `world-auto`).
+- Move the `fi` LAN proxy lane from port `3129` to `3126`, so the lane map
+  is world `3125`, fi `3126`, us `3127`, de `3128`, ru `3130`.
+- The sing-box internal listener stays on `23128`; the image stays untagged
+  and is published by the VPN Panel repository workflow.
+
 ## 0.1.24
 
 - One existing route-health controller verifies Discord HTTPS and native Telegram resPQ, and selects working routes automatically.
