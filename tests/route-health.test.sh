@@ -38,7 +38,7 @@ chmod 0700 "$work_dir/native-probe"
 
 cat >"$work_dir/options.json" <<'JSON'
 {
-  "lan_fi_proxy_port": 3129,
+  "lan_fi_proxy_port": 3126,
   "lan_de_proxy_port": 3128,
   "lan_us_proxy_port": 3127,
   "lan_fi_proxy_outbound_tag": "fi-helsinki",
@@ -54,7 +54,7 @@ run_scenario() {
     printf '%s' "$clash_now" >"$d/clash-now"
     cp "$work_dir/options.json" "$d/options.json"
     local port
-    for port in 3127 3128 3129; do printf '200 0.500\n' >"$d/probes/$port"; done
+    for port in 3127 3128 3126; do printf '200 0.500\n' >"$d/probes/$port"; done
     local spec
     for spec in $probes; do printf '%s\n' "${spec#*:}" | tr ',' ' ' >"$d/probes/${spec%%:*}"; done
     printf '%s' "$init_state" >"$d/state.json"
@@ -93,32 +93,32 @@ run_scenario() {
 HEALTHY='{"lanes":{"fi-helsinki":{"ewma_ms":200,"err_streak":0,"ok_streak":3},"de-regional":{"ewma_ms":500,"err_streak":0,"ok_streak":3},"us-regional":{"ewma_ms":900,"err_streak":0,"ok_streak":3}},"chosen":"fi-helsinki","all_fail_rounds":0}'
 
 run_scenario keep-healthy '{"now":"fi-helsinki"}' \
-  '3129:200,0.200 3128:200,0.500 3127:200,0.900' \
+  '3126:200,0.200 3128:200,0.500 3127:200,0.900' \
   "$HEALTHY" fi-helsinki no ''
 
 run_scenario heal-current-broken '{"now":"fi-helsinki"}' \
-  '3129:000,0.001 3128:200,0.300 3127:200,0.800' \
+  '3126:000,0.001 3128:200,0.300 3127:200,0.800' \
   "$HEALTHY" de-regional yes 'SWITCH ai-route -> de-regional'
 
 RECOVERED='{"lanes":{"fi-helsinki":{"ewma_ms":200,"err_streak":0,"ok_streak":3},"de-regional":{"ewma_ms":250,"err_streak":0,"ok_streak":0},"us-regional":{"ewma_ms":900,"err_streak":0,"ok_streak":3}},"chosen":"fi-helsinki","all_fail_rounds":0}'
 run_scenario hysteresis-first-round '{"now":"fi-helsinki"}' \
-  '3129:200,0.600 3128:200,0.100 3127:200,0.800' \
+  '3126:200,0.600 3128:200,0.100 3127:200,0.800' \
   "$RECOVERED" fi-helsinki no ''
 
 SUSTAINED='{"lanes":{"fi-helsinki":{"ewma_ms":320,"err_streak":0,"ok_streak":3},"de-regional":{"ewma_ms":205,"err_streak":0,"ok_streak":2},"us-regional":{"ewma_ms":900,"err_streak":0,"ok_streak":3}},"chosen":"fi-helsinki","all_fail_rounds":0}'
 run_scenario switch-when-sustained '{"now":"fi-helsinki"}' \
-  '3129:200,0.600 3128:200,0.100 3127:200,0.800' \
+  '3126:200,0.600 3128:200,0.100 3127:200,0.800' \
   "$SUSTAINED" de-regional yes 'SWITCH ai-route -> de-regional'
 
 run_scenario all-fail '{"now":"fi-helsinki"}' \
-  '3129:000,0.001 3128:000,0.001 3127:000,0.001' \
+  '3126:000,0.001 3128:000,0.001 3127:000,0.001' \
   '{"lanes":{"fi-helsinki":{"ewma_ms":200,"err_streak":0,"ok_streak":1},"de-regional":{"ewma_ms":500,"err_streak":0,"ok_streak":1},"us-regional":{"ewma_ms":900,"err_streak":0,"ok_streak":1}},"chosen":"fi-helsinki","all_fail_rounds":2}' \
   '' no 'ALL LANES FAILING (3/3)'
 
 # Focused integration: same controller switches native Telegram off a failed
 # US lane while retaining the independently healthy AI lane. Expected2/max20s.
 TEST_TELEGRAM_ENABLED=true run_scenario native-telegram-heal '{"now":"fi-helsinki"}' \
-  '3129:200,0.200 3128:200,0.500 3127:000,0.001' \
+  '3126:200,0.200 3128:200,0.500 3127:000,0.001' \
   "$HEALTHY" fi-helsinki yes 'SWITCH telegram-route ->'
 
 printf '%s\n' 'route-health auto-selection contract: PASS'

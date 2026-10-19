@@ -32,6 +32,8 @@ type dnsCache struct {
 	epoch                                         uint64
 	hits, misses, coalesced, refreshes, evictions atomic.Uint64
 }
+
+// dnsFlight tracks one in-flight upstream lookup so concurrent callers share it.
 type dnsFlight struct {
 	done     chan struct{}
 	response []byte
@@ -113,6 +115,7 @@ func (cache *dnsCache) get(key string, query []byte, now time.Time) ([]byte, boo
 	return response, true
 }
 
+// evictOne drops the least recently used entry.
 func (cache *dnsCache) evictOne() {
 	oldest := cache.order.Back()
 	if oldest == nil {
@@ -124,6 +127,8 @@ func (cache *dnsCache) evictOne() {
 	cache.order.Remove(oldest)
 	cache.evictions.Add(1)
 }
+
+// rebindDNSID copies a shared response and rewrites the transaction ID for this caller.
 func rebindDNSID(response, query []byte) []byte {
 	if len(response) < 2 || len(query) < 2 {
 		return response
@@ -132,6 +137,8 @@ func rebindDNSID(response, query []byte) []byte {
 	copy(result[:2], query[:2])
 	return result
 }
+
+// fetch serves a cached response or runs one coalesced upstream lookup.
 func (cache *dnsCache) fetch(key string, query []byte, lookup func([]byte) ([]byte, error)) ([]byte, error) {
 	now := time.Now()
 	if response, ok := cache.get(key, query, now); ok {
@@ -148,6 +155,8 @@ func (cache *dnsCache) fetch(key string, query []byte, lookup func([]byte) ([]by
 	}
 	return cache.fetchFresh(key, query, lookup)
 }
+
+// fetchFresh performs the upstream lookup, joining an in-flight one when present.
 func (cache *dnsCache) fetchFresh(key string, query []byte, lookup func([]byte) ([]byte, error)) ([]byte, error) {
 	cache.mu.Lock()
 	if flight, exists := cache.flights[key]; exists {
@@ -170,6 +179,8 @@ func (cache *dnsCache) fetchFresh(key string, query []byte, lookup func([]byte) 
 	}
 	return rebindDNSID(flight.response, query), flight.err
 }
+
+// stats reports cache counters for periodic logging.
 func (cache *dnsCache) stats() map[string]uint64 {
 	cache.mu.Lock()
 	count := uint64(len(cache.entries))
@@ -178,6 +189,8 @@ func (cache *dnsCache) stats() map[string]uint64 {
 	cache.mu.Unlock()
 	return map[string]uint64{"entries": count, "bytes": bytes, "inflight": inflight, "hits": cache.hits.Load(), "misses": cache.misses.Load(), "coalesced": cache.coalesced.Load(), "refreshes": cache.refreshes.Load(), "evictions": cache.evictions.Load()}
 }
+
+// clear drops every entry and invalidates in-flight responses from older policy.
 func (cache *dnsCache) clear() {
 	cache.mu.Lock()
 	cache.entries = make(map[string]dnsCacheEntry)
@@ -276,12 +289,14 @@ type cacheSnapshot struct {
 	Fingerprint string                     `json:"fingerprint"`
 	Records     map[string]cacheDiskRecord `json:"records"`
 }
+
 type cacheDiskRecord struct {
 	Reply     []byte `json:"reply"`
 	StoredAt  int64  `json:"stored_at"`
 	ExpiresAt int64  `json:"expires_at"`
 }
 
+// saveSnapshot writes live entries to disk atomically with restrictive permissions.
 func (cache *dnsCache) saveSnapshot(path, fingerprint string) error {
 	if path == "" {
 		return nil
@@ -319,6 +334,8 @@ func (cache *dnsCache) saveSnapshot(path, fingerprint string) error {
 	}
 	return os.Rename(f.Name(), path)
 }
+
+// loadSnapshot restores entries persisted for the same configuration fingerprint.
 func (cache *dnsCache) loadSnapshot(path, fingerprint string) error {
 	if path == "" {
 		return nil

@@ -383,13 +383,13 @@ func loadConfig(path string) (*config, *runtime, error) {
 		cfg.PublicDNSListen.Profile = "public"
 	}
 	if cfg.DirectDNS.Host == "" {
-		cfg.DirectDNS = upstreamCfg{Host: "9.9.9.9", Port: 53, TimeoutMS: 2000}
+		cfg.DirectDNS = upstreamCfg{Host: "9.9.9.9", Port: 53, TimeoutMS: 3000}
 	}
 	if cfg.HTTPProxy.Host == "" {
 		cfg.HTTPProxy = upstreamCfg{Host: "127.0.0.1", Port: 3128, TimeoutMS: 5000}
 	}
 	if cfg.ProxyDoH.URLHost == "" {
-		cfg.ProxyDoH = proxyDoHCfg{URLHost: "dns.quad9.net", Path: "/dns-query", Port: 443, TimeoutMS: 5000}
+		cfg.ProxyDoH = proxyDoHCfg{URLHost: "cloudflare-dns.com", Path: "/dns-query", Port: 443, TimeoutMS: 7000}
 	}
 	if cfg.BackupDoH.URLHost == "" {
 		cfg.BackupDoH = proxyDoHCfg{URLHost: "dns.google", Path: "/dns-query", Port: 443, TimeoutMS: 5000}
@@ -516,6 +516,7 @@ func (rt *runtime) reloadPolicy(path string) error {
 	return nil
 }
 
+// watchPolicyReload refreshes routing policy on SIGHUP without touching listeners.
 func (rt *runtime) watchPolicyReload(path string) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGHUP)

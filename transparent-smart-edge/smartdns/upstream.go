@@ -84,6 +84,8 @@ func (resolver *proxyDoHResolver) query(ctx context.Context, message []byte) ([]
 	resolver.breakerMu.Unlock()
 	return result, err
 }
+
+// queryOnce performs one upstream exchange without any breaker bookkeeping.
 func (resolver *proxyDoHResolver) queryOnce(ctx context.Context, message []byte) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, resolver.endpoint, bytes.NewReader(message))
 	if err != nil {

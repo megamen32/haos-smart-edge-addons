@@ -15,13 +15,15 @@ lan_us_port="$(option lan_us_proxy_port 3127)"
 lan_de_enabled="$(option lan_de_proxy_enabled true)"
 lan_de_port="$(option lan_de_proxy_port 3128)"
 lan_fi_enabled="$(option lan_fi_proxy_enabled true)"
-lan_fi_port="$(option lan_fi_proxy_port 3129)"
+lan_fi_port="$(option lan_fi_proxy_port 3126)"
+lan_world_enabled="$(option lan_world_proxy_enabled true)"
+lan_world_port="$(option lan_world_proxy_port 3125)"
 lan_ru_enabled="$(option lan_ru_proxy_enabled true)"
 lan_ru_port="$(option lan_ru_proxy_port 3130)"
 require_singbox_config="$(option require_singbox_config false)"
 singbox_config=/data/singbox.json
 proxy_users_required=false
-for proxy_enabled in "$lan_us_enabled" "$lan_de_enabled" "$lan_fi_enabled" "$lan_ru_enabled"; do
+for proxy_enabled in "$lan_us_enabled" "$lan_de_enabled" "$lan_fi_enabled" "$lan_ru_enabled" "$lan_world_enabled"; do
     if [[ "$proxy_enabled" == true ]]; then
         proxy_users_required=true
         break
@@ -48,6 +50,10 @@ if [[ -s "$singbox_config" ]]; then
         nc -z -w 2 127.0.0.1 "$lan_fi_port"
         nc -z -w 2 127.0.0.1 "$((lan_fi_port + 10000))"
     fi
+    if [[ "$lan_world_enabled" == true ]]; then
+        nc -z -w 2 127.0.0.1 "$lan_world_port"
+        nc -z -w 2 127.0.0.1 "$((lan_world_port + 10000))"
+    fi
     if [[ "$lan_ru_enabled" == true ]]; then
         nc -z -w 2 127.0.0.1 "$lan_ru_port"
         nc -z -w 2 127.0.0.1 "$((lan_ru_port + 10000))"
@@ -59,13 +65,15 @@ if [[ -s "$singbox_config" ]]; then
           --argjson us "$lan_us_enabled" \
           --argjson de "$lan_de_enabled" \
           --argjson fi "$lan_fi_enabled" \
-          --argjson ru "$lan_ru_enabled" '
+          --argjson ru "$lan_ru_enabled" \
+          --argjson world "$lan_world_enabled" '
           def lan_open($tag): ([.inbounds[]? | select(.tag == $tag and ((.users // []) | length) == 0)] | length) == 1;
           def wan_authed($tag): ([.inbounds[]? | select(.tag == $tag and (.users | type == "array") and (.users | length > 0))] | length) == 1;
           (if $us then lan_open("lan-us-http") and wan_authed("wan-us-http") else true end)
           and (if $de then lan_open("lan-de-http") and wan_authed("wan-de-http") else true end)
           and (if $fi then lan_open("lan-fi-http") and wan_authed("wan-fi-http") else true end)
           and (if $ru then lan_open("lan-ru-http") and wan_authed("wan-ru-http") else true end)
+          and (if $world then lan_open("lan-world-http") and wan_authed("wan-world-http") else true end)
         ' /data/singbox-runtime.json >/dev/null
     fi
 elif [[ "$require_singbox_config" == true || "$dns_port" == 53 || "$edge_port" == 443 ]]; then

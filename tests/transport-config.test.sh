@@ -47,16 +47,17 @@ jq -e '
 # renders the full source with every regional outbound. Add the Finland leaf
 # from the source fixture so the runtime stage exercises the fi lane too.
 jq --slurpfile src "$work_dir/source.json" \
-  '.outbounds += ([$src[0].outbounds[] | select(.tag == "fi-helsinki" or .tag == "direct")])' \
+  '.outbounds += ([$src[0].outbounds[] | select(.tag == "fi-helsinki" or .tag == "direct")])
+   | .outbounds += [{type:"urltest",tag:"world-auto",outbounds:["de-direct","us-reality","fi-helsinki"],url:"https://www.gstatic.com/generate_204",interval:"30s"}]' \
   "$work_dir/generated.json" >"$work_dir/generated-full.json"
 mv "$work_dir/generated-full.json" "$work_dir/generated.json"
 
 printf '%s\n' '{"users":[{"username":"test-user","password":"test-password"}]}' >"$work_dir/proxy-users.json"
 
-bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json" true
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto "$work_dir/proxy-users.json" true
 
 SING_BOX_BIN="$work_dir/sing-box" \
-  bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct true
+  bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto true
 
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127 and ((.users // []) | length) == 0)] | length) == 1
@@ -67,10 +68,14 @@ jq -e '
   and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("lan-de-http")))] | length) == 1
   and ([.inbounds[] | select(.type == "http" and .tag == "wan-de-http" and .listen_port == 13128 and (.users | length) == 1)] | length) == 1
   and ([.route.rules[] | select(.outbound == "de-regional" and ((.inbound // []) | index("wan-de-http")))] | length) == 1
-  and ([.inbounds[] | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == 3129 and ((.users // []) | length) == 0)] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-fi-http" and .listen == "0.0.0.0" and .listen_port == 3126 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "fi-helsinki" and ((.inbound // []) | index("lan-fi-http")))] | length) == 1
-  and ([.inbounds[] | select(.type == "http" and .tag == "wan-fi-http" and .listen_port == 13129 and (.users | length) == 1)] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-fi-http" and .listen_port == 13126 and (.users | length) == 1)] | length) == 1
   and ([.route.rules[] | select(.outbound == "fi-helsinki" and ((.inbound // []) | index("wan-fi-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "lan-world-http" and .listen == "0.0.0.0" and .listen_port == 3125 and ((.users // []) | length) == 0)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "world-auto" and ((.inbound // []) | index("lan-world-http")))] | length) == 1
+  and ([.inbounds[] | select(.type == "http" and .tag == "wan-world-http" and .listen_port == 13125 and (.users | length) == 1)] | length) == 1
+  and ([.route.rules[] | select(.outbound == "world-auto" and ((.inbound // []) | index("wan-world-http")))] | length) == 1
   and ([.inbounds[] | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == 3130 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "direct" and ((.inbound // []) | index("lan-ru-http")))] | length) == 1
   and ([.inbounds[] | select(.type == "http" and .tag == "wan-ru-http" and .listen_port == 13130 and (.users | length) == 1)] | length) == 1
@@ -96,7 +101,7 @@ jq -e '
 
 jq -e '([.route.rules[] | select(.outbound == "ai-route" and ((.domain_suffix // []) | index("openai.com")) and ((.domain_suffix // []) | index("anthropic.com")))] | length) == 1' "$work_dir/runtime.json" >/dev/null
 
-bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime-noai.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3129 fi-helsinki true 3130 direct "$work_dir/proxy-users.json" false
+bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime-noai.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto "$work_dir/proxy-users.json" false
 
 jq -e '
   ([.outbounds[] | select(.tag == "ai-route")] | length) == 0

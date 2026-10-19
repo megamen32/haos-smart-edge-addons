@@ -13,12 +13,15 @@ lan_de_enabled="${8:-false}"
 lan_de_port="${9:-3128}"
 lan_de_outbound_tag="${10:-de-regional}"
 lan_fi_enabled="${11:-false}"
-lan_fi_port="${12:-3129}"
+lan_fi_port="${12:-3126}"
 lan_fi_outbound_tag="${13:-fi-helsinki}"
 lan_ru_enabled="${14:-false}"
 lan_ru_port="${15:-3130}"
 lan_ru_outbound_tag="${16:-direct}"
-ai_route_enabled="${17:-false}"
+lan_world_enabled="${17:-false}"
+lan_world_port="${18:-3125}"
+lan_world_outbound_tag="${19:-world-auto}"
+ai_route_enabled="${20:-false}"
 clash_api_address="${CLASH_API_ADDRESS:-127.0.0.1:9095}"
 singbox_bin="${SING_BOX_BIN:-/usr/bin/sing-box}"
 
@@ -43,6 +46,9 @@ if ! jq -e \
     --argjson lan_ru_enabled "$lan_ru_enabled" \
     --argjson lan_ru_port "$lan_ru_port" \
     --arg lan_ru_tag "$lan_ru_outbound_tag" \
+    --argjson lan_world_enabled "$lan_world_enabled" \
+    --argjson lan_world_port "$lan_world_port" \
+    --arg lan_world_tag "$lan_world_outbound_tag" \
     --argjson ai_enabled "$ai_route_enabled" \
     --arg clash_api "$clash_api_address" \
     '. as $root
@@ -93,6 +99,13 @@ if ! jq -e \
             and ([.inbounds[]? | select(.type == "http" and .tag == "wan-fi-http" and .listen == "0.0.0.0" and .listen_port == ($lan_fi_port + 10000) and (.users | length) > 0)] | length) == 1
             and ([.route.rules[]? | select(.outbound == $lan_fi_tag and ((.inbound // []) | index("wan-fi-http")))] | length) == 1
           else ([.inbounds[]? | select(.tag == "lan-fi-http" or .tag == "wan-fi-http")] | length) == 0 end)
+     and (if $lan_world_enabled then
+            valid_target($lan_world_tag)
+            and ([.inbounds[]? | select(.type == "http" and .tag == "lan-world-http" and .listen == "0.0.0.0" and .listen_port == $lan_world_port and ((.users // []) | length) == 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_world_tag and ((.inbound // []) | index("lan-world-http")))] | length) == 1
+            and ([.inbounds[]? | select(.type == "http" and .tag == "wan-world-http" and .listen == "0.0.0.0" and .listen_port == ($lan_world_port + 10000) and (.users | length) > 0)] | length) == 1
+            and ([.route.rules[]? | select(.outbound == $lan_world_tag and ((.inbound // []) | index("wan-world-http")))] | length) == 1
+          else ([.inbounds[]? | select(.tag == "lan-world-http" or .tag == "wan-world-http")] | length) == 0 end)
      and (if $lan_ru_enabled then
             ([.outbounds[]? | select(.tag == $lan_ru_tag and .type == "direct")] | length) == 1
             and ([.inbounds[]? | select(.type == "http" and .tag == "lan-ru-http" and .listen == "0.0.0.0" and .listen_port == $lan_ru_port and ((.users // []) | length) == 0)] | length) == 1

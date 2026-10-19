@@ -35,7 +35,7 @@ AI_ENABLED="${ROUTE_HEALTH_AI_ENABLED:-$(option ai_route_enabled true)}"
 PROBE_KIND=ai
 STICKY=false
 
-lanes_default="$(option lan_fi_proxy_outbound_tag fi-helsinki):$(option lan_fi_proxy_port 3129) $(option lan_de_proxy_outbound_tag de-regional):$(option lan_de_proxy_port 3128) $(option lan_us_proxy_outbound_tag us-regional):$(option lan_us_proxy_port 3127)"
+lanes_default="$(option lan_fi_proxy_outbound_tag fi-helsinki):$(option lan_fi_proxy_port 3126) $(option lan_de_proxy_outbound_tag de-regional):$(option lan_de_proxy_port 3128) $(option lan_us_proxy_outbound_tag us-regional):$(option lan_us_proxy_port 3127)"
 LANES="${ROUTE_HEALTH_LANES:-$lanes_default}"
 
 log() { printf 'route-health: %s\n' "$*"; }

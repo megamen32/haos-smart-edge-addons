@@ -13,19 +13,7 @@
   "directDns": {
     "host": "9.9.9.9",
     "port": 53,
-    "timeoutMs": 2000
-  },
-  "proxyDoh": {
-    "urlHost": "dns.quad9.net",
-    "path": "/dns-query",
-    "port": 443,
-    "timeoutMs": 5000
-  },
-  "backupDoh": {
-    "urlHost": "dns.google",
-    "path": "/dns-query",
-    "port": 443,
-    "timeoutMs": 5000
+    "timeoutMs": 3000
   },
   "edgeProfiles": {
     "local": {

@@ -9,6 +9,9 @@
   is world `3125`, fi `3126`, us `3127`, de `3128`, ru `3130`.
 - The sing-box internal listener stays on `23128`; the image stays untagged
   and is published by the VPN Panel repository workflow.
+- The default `telegram_outbound_tag` is now `us-reality`, matching the value
+  the production deployment sets; `telegram-auto` stays available as the
+  health-selected group for the Telegram lane itself.
 
 ## 0.1.24
 

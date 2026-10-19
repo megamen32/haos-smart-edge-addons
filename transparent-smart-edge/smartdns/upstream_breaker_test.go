@@ -15,6 +15,7 @@ func (rt *brokenDoHRoundTripper) RoundTrip(*http.Request) (*http.Response, error
 	rt.calls.Add(1)
 	return nil, errors.New("unexpected EOF")
 }
+
 func TestDoHBreakerOpensAfterThreeFailures(t *testing.T) {
 	rt := &brokenDoHRoundTripper{}
 	r := &proxyDoHResolver{client: &http.Client{Transport: rt}, endpoint: "https://example.org/dns-query"}

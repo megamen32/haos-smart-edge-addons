@@ -42,11 +42,14 @@ LAN_DE_PROXY_ENABLED="$(option lan_de_proxy_enabled true)"
 LAN_DE_PROXY_PORT="$(option lan_de_proxy_port 3128)"
 LAN_DE_PROXY_OUTBOUND_TAG="$(option lan_de_proxy_outbound_tag de-regional)"
 LAN_FI_PROXY_ENABLED="$(option lan_fi_proxy_enabled true)"
-LAN_FI_PROXY_PORT="$(option lan_fi_proxy_port 3129)"
+LAN_FI_PROXY_PORT="$(option lan_fi_proxy_port 3126)"
 LAN_FI_PROXY_OUTBOUND_TAG="$(option lan_fi_proxy_outbound_tag fi-helsinki)"
 LAN_RU_PROXY_ENABLED="$(option lan_ru_proxy_enabled true)"
 LAN_RU_PROXY_PORT="$(option lan_ru_proxy_port 3130)"
 LAN_RU_PROXY_OUTBOUND_TAG="$(option lan_ru_proxy_outbound_tag direct)"
+LAN_WORLD_PROXY_ENABLED="$(option lan_world_proxy_enabled true)"
+LAN_WORLD_PROXY_PORT="$(option lan_world_proxy_port 3125)"
+LAN_WORLD_PROXY_OUTBOUND_TAG="$(option lan_world_proxy_outbound_tag world-auto)"
 AI_ROUTE_ENABLED="$(option ai_route_enabled true)"
 
 require_port dns_port "$DNS_PORT"
@@ -58,9 +61,10 @@ require_port lan_us_proxy_port "$LAN_US_PROXY_PORT"
 require_port lan_de_proxy_port "$LAN_DE_PROXY_PORT"
 require_port lan_fi_proxy_port "$LAN_FI_PROXY_PORT"
 require_port lan_ru_proxy_port "$LAN_RU_PROXY_PORT"
+require_port lan_world_proxy_port "$LAN_WORLD_PROXY_PORT"
 
 proxy_users_required=false
-for proxy_enabled in "$LAN_US_PROXY_ENABLED" "$LAN_DE_PROXY_ENABLED" "$LAN_FI_PROXY_ENABLED" "$LAN_RU_PROXY_ENABLED"; do
+for proxy_enabled in "$LAN_US_PROXY_ENABLED" "$LAN_DE_PROXY_ENABLED" "$LAN_FI_PROXY_ENABLED" "$LAN_RU_PROXY_ENABLED" "$LAN_WORLD_PROXY_ENABLED"; do
     if [[ "$proxy_enabled" == true ]]; then
         proxy_users_required=true
         break
@@ -88,11 +92,12 @@ if [[ -s "$SINGBOX_CONFIG_PATH" ]]; then
       "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" \
       "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" \
       "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" \
+      "$LAN_WORLD_PROXY_ENABLED" "$LAN_WORLD_PROXY_PORT" "$LAN_WORLD_PROXY_OUTBOUND_TAG" \
       "$PROXY_USERS_FILE" \
       "$AI_ROUTE_ENABLED"
     chmod 0600 "$SINGBOX_RUNTIME_PATH.tmp"
     mv -f "$SINGBOX_RUNTIME_PATH.tmp" "$SINGBOX_RUNTIME_PATH"
-    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" "$AI_ROUTE_ENABLED"
+    /usr/bin/validate-singbox-config.sh "$SINGBOX_RUNTIME_PATH" "$SINGBOX_INTERNAL_PORT" "$SINGBOX_OUTBOUND_TAG" "$TELEGRAM_OUTBOUND_TAG" "$LAN_US_PROXY_ENABLED" "$LAN_US_PROXY_PORT" "$LAN_US_PROXY_OUTBOUND_TAG" "$LAN_DE_PROXY_ENABLED" "$LAN_DE_PROXY_PORT" "$LAN_DE_PROXY_OUTBOUND_TAG" "$LAN_FI_PROXY_ENABLED" "$LAN_FI_PROXY_PORT" "$LAN_FI_PROXY_OUTBOUND_TAG" "$LAN_RU_PROXY_ENABLED" "$LAN_RU_PROXY_PORT" "$LAN_RU_PROXY_OUTBOUND_TAG" "$LAN_WORLD_PROXY_ENABLED" "$LAN_WORLD_PROXY_PORT" "$LAN_WORLD_PROXY_OUTBOUND_TAG" "$AI_ROUTE_ENABLED"
     singbox_enabled=1
 elif [[ "$REQUIRE_SINGBOX_CONFIG" == true || "$DNS_PORT" == 53 || "$EDGE_PORT" == 443 ]]; then
     printf 'missing %s; refusing final-port startup without a validated transport\n' "$SINGBOX_CONFIG_PATH" >&2
@@ -130,6 +135,32 @@ export LISTEN_PORT="$EDGE_PORT"
 export CONNECT_PORT=443
 export PROXY_HOST=127.0.0.1
 export PROXY_PORT="$SINGBOX_INTERNAL_PORT"
+
+# --- multi-upstream failover for the SNI edge -------------------------------
+# The primary upstream stays the transparent-edge listener (23128): it is the
+# only inbound covered by the ai-route and telegram-auto domain rules, so an
+# edge CONNECT for an AI or a Telegram host still leaves through the
+# health-selected route. The per-region LAN inbounds follow as independent
+# exits, so one dead or black-holed lane no longer takes the whole transparent
+# edge down. The world lane (3125) is deliberately not part of this chain: it
+# is a plain `world-auto` lane for human clients, and sing-box is
+# first-match-wins, so routing the edge through it would drop the AI and
+# Telegram rules. The RU lane is deliberately excluded: it is bound to a
+# `direct` outbound rather than an exit, so failing back to it would hand the
+# client traffic that connects but stays blocked.
+edge_upstreams="world-auto=127.0.0.1:$SINGBOX_INTERNAL_PORT"
+if [[ "$LAN_FI_PROXY_ENABLED" == true ]]; then
+    edge_upstreams+=",fi=127.0.0.1:$LAN_FI_PROXY_PORT"
+fi
+if [[ "$LAN_DE_PROXY_ENABLED" == true ]]; then
+    edge_upstreams+=",de=127.0.0.1:$LAN_DE_PROXY_PORT"
+fi
+if [[ "$LAN_US_PROXY_ENABLED" == true ]]; then
+    edge_upstreams+=",us=127.0.0.1:$LAN_US_PROXY_PORT"
+fi
+export PROXY_UPSTREAMS="$edge_upstreams"
+unset edge_upstreams
+# ---------------------------------------------------------------------------
 
 /usr/bin/smartdns &
 smartdns_pid="$!"

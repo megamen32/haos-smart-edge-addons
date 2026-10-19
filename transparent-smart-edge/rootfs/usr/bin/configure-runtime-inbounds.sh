@@ -19,9 +19,12 @@ lan_fi_outbound="${14:?missing LAN Finland outbound}"
 lan_ru_enabled="${15:?missing LAN RU enabled}"
 lan_ru_port="${16:?missing LAN RU port}"
 lan_ru_outbound="${17:?missing LAN RU outbound}"
-proxy_users_file="${18:?missing proxy users file}"
-ai_route_enabled="${19:?missing AI route enabled}"
-ai_domains_csv="${20:-openai.com,chatgpt.com,oaistatic.com,oaiusercontent.com,oaistatsig.com,sora.com,anthropic.com,claude.ai,claude.com}"
+lan_world_enabled="${18:?missing LAN world enabled}"
+lan_world_port="${19:?missing LAN world port}"
+lan_world_outbound="${20:?missing LAN world outbound}"
+proxy_users_file="${21:?missing proxy users file}"
+ai_route_enabled="${22:?missing AI route enabled}"
+ai_domains_csv="${23:-openai.com,chatgpt.com,oaistatic.com,oaiusercontent.com,oaistatsig.com,sora.com,anthropic.com,claude.ai,claude.com}"
 clash_api_address="${CLASH_API_ADDRESS:-127.0.0.1:9095}"
 
 jq -e '(.users | type == "array") and all(.users[]?; (.username | type == "string" and length > 0) and (.password | type == "string" and length > 0))' "$proxy_users_file" >/dev/null
@@ -42,6 +45,9 @@ jq \
   --argjson lan_ru_enabled "$lan_ru_enabled" \
   --argjson lan_ru_port "$lan_ru_port" \
   --arg lan_ru_outbound "$lan_ru_outbound" \
+  --argjson lan_world_enabled "$lan_world_enabled" \
+  --argjson lan_world_port "$lan_world_port" \
+  --arg lan_world_outbound "$lan_world_outbound" \
   --argjson ai_route_enabled "$ai_route_enabled" \
   --arg ai_domains "$ai_domains_csv" \
   --arg clash_api "$clash_api_address" \
@@ -51,7 +57,7 @@ jq \
   def wan_http($tag; $port):
     {type:"http",tag:$tag,listen:"0.0.0.0",listen_port:($port + 10000),users:$proxy_auth[0].users};
   .outbounds = ((.outbounds // []) | map(select(.tag != "ai-route" and .tag != "telegram-route")))
-  | .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy" and .tag != "lan-us-http" and .tag != "lan-de-http" and .tag != "lan-fi-http" and .tag != "lan-ru-http" and .tag != "wan-us-http" and .tag != "wan-de-http" and .tag != "wan-fi-http" and .tag != "wan-ru-http")))
+  | .inbounds = ((.inbounds // []) | map(select(.tag != "telegram-tproxy" and .tag != "lan-us-http" and .tag != "lan-de-http" and .tag != "lan-fi-http" and .tag != "lan-ru-http" and .tag != "wan-us-http" and .tag != "wan-de-http" and .tag != "wan-fi-http" and .tag != "wan-ru-http" and .tag != "lan-world-http" and .tag != "wan-world-http")))
   | .route.rules = ((.route.rules // []) | map(select(
       ((.inbound // []) | index("telegram-tproxy")) == null
       and ((.inbound // []) | index("lan-us-http")) == null
@@ -62,6 +68,8 @@ jq \
       and ((.inbound // []) | index("wan-de-http")) == null
       and ((.inbound // []) | index("wan-fi-http")) == null
       and ((.inbound // []) | index("wan-ru-http")) == null
+      and ((.inbound // []) | index("lan-world-http")) == null
+      and ((.inbound // []) | index("wan-world-http")) == null
       and ((.outbound // "") != "ai-route" and (.outbound // "") != "telegram-route")
     )))
   | if $telegram_enabled then
@@ -98,6 +106,11 @@ jq \
       .inbounds += [lan_http("lan-fi-http"; $lan_fi_port), wan_http("wan-fi-http"; $lan_fi_port)]
       | .route.rules = ([{inbound:["lan-fi-http"],outbound:$lan_fi_outbound}] + .route.rules)
       | .route.rules = ([{inbound:["wan-fi-http"],outbound:$lan_fi_outbound}] + .route.rules)
+    else . end
+  | if $lan_world_enabled then
+      .inbounds += [lan_http("lan-world-http"; $lan_world_port), wan_http("wan-world-http"; $lan_world_port)]
+      | .route.rules = ([{inbound:["lan-world-http"],outbound:$lan_world_outbound}] + .route.rules)
+      | .route.rules = ([{inbound:["wan-world-http"],outbound:$lan_world_outbound}] + .route.rules)
     else . end
   | if $lan_ru_enabled then
       .inbounds += [lan_http("lan-ru-http"; $lan_ru_port), wan_http("wan-ru-http"; $lan_ru_port)]

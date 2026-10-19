@@ -51,6 +51,7 @@ func TestCacheCoalescesConcurrentRequests(t *testing.T) {
 		t.Fatalf("upstream calls=%d want 1", n)
 	}
 }
+
 func TestCachePersistsOnlyValidAndMatchingFingerprint(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.json")
 	c := newDNSCache(10)
@@ -83,6 +84,7 @@ func TestCachePersistsOnlyValidAndMatchingFingerprint(t *testing.T) {
 		t.Fatal("stale policy snapshot accepted")
 	}
 }
+
 func TestCachePolicyClearDropsOldFlight(t *testing.T) {
 	c := newDNSCache(10)
 	q := dnsAQuery("policy.example", 22)
@@ -107,6 +109,7 @@ func TestCachePolicyClearDropsOldFlight(t *testing.T) {
 		t.Fatal("response from old policy survived policy clear")
 	}
 }
+
 func TestCacheLRUEvictsLeastRecentlyUsed(t *testing.T) {
 	c := newDNSCache(2)
 	now := time.Now()
@@ -161,6 +164,7 @@ func TestNegativeCacheSOALifetime(t *testing.T) {
 		}
 	}
 }
+
 func TestNegativeCacheDoesNotCacheBareNXDOMAIN(t *testing.T) {
 	q := dnsAQuery("missing.example", 1)
 	q[3] = (q[3] & 0xf0) | 3
@@ -168,6 +172,7 @@ func TestNegativeCacheDoesNotCacheBareNXDOMAIN(t *testing.T) {
 		t.Fatal("NXDOMAIN without SOA must not be cached")
 	}
 }
+
 func TestCacheRejectsLargeResponses(t *testing.T) {
 	c := newDNSCache(2)
 	c.put("oversized", make([]byte, 8193), time.Now())
