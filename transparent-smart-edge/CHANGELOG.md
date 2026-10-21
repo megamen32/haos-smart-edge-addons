@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.27
+
+- Fix the DoT listener: it parses plain DNS messages as RFC 7858 requires
+  instead of only length-prefixed frames. Standard clients (iOS and Android
+  Private DNS, browsers) no longer get a closed connection without a reply.
+- Accept the per-client DoH host form. The client identity is now taken from
+  the `Host` header when the request path carries none, exactly the way the
+  DoT listener reads it from SNI.
+
 ## 0.1.26
 
 - Add the `smartdns_sync_url` option (default

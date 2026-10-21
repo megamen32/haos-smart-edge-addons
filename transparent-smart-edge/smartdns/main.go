@@ -1108,17 +1108,35 @@ func (d *dohServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// extract client id from /dns-query/<cid> path
+	// The client identity comes either from the path
+	// (/dns-query/<client-id>) or from the host name
+	// (<client-id>.dns.bezrabotnyi.com). The host form carries the identity
+	// exactly the way the DoT listener reads it from SNI.
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 || parts[0] != "dns-query" {
+	if len(parts) == 0 || parts[0] != "dns-query" {
 		http.Error(w, "dns error", http.StatusBadRequest)
 		return
 	}
-	clientID, err := url.PathUnescape(parts[1])
-	if err != nil {
-		http.Error(w, "bad client id", http.StatusBadRequest)
-		return
+	clientID := ""
+	if len(parts) > 1 && parts[1] != "" {
+		clientID, err = url.PathUnescape(parts[1])
+		if err != nil {
+			http.Error(w, "bad client id", http.StatusBadRequest)
+			return
+		}
+	} else {
+		host := normalizeName(r.Host)
+		if h, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+			host = h
+		}
+		id, ok := clientFromSNI(host, rtBase(d.rt))
+		if !ok {
+			http.Error(w, "unknown client host", http.StatusForbidden)
+			return
+		}
+		clientID = id
 	}
+
 
 	var query []byte
 	if r.Method == http.MethodGet {
@@ -1427,6 +1445,142 @@ func (rt *runtime) listenDoT(cfg *config) error {
 	return nil
 }
 
+// nextDoTFrame extracts one DNS query from a DoT byte stream.
+//
+// RFC 7858 sends the DNS message as-is over TLS, without any length prefix.
+// A length-prefixed frame (the DNS-over-TCP style) is still accepted so old
+// clients keep working.
+//
+// It returns the query, the bytes that follow it, whether the frame was
+// length-prefixed, whether more bytes are needed, and whether the stream is
+// valid at all.
+func nextDoTFrame(buf []byte) (query []byte, rest []byte, framed bool, needMore bool, ok bool) {
+	// A complete plain DNS message.
+	if off, complete, _ := dnsMessageLen(buf); complete {
+		return buf[:off], buf[off:], false, false, true
+	}
+	// A length-prefixed frame.
+	if len(buf) >= 2 {
+		qlen := int(binary.BigEndian.Uint16(buf[:2]))
+		if qlen >= 12 && qlen <= 4096 {
+			if len(buf) >= 2+qlen {
+				if inner, complete, _ := dnsMessageLen(buf[2 : 2+qlen]); complete && inner == qlen {
+					return buf[2 : 2+qlen], buf[2+qlen:], true, false, true
+				}
+				return nil, buf, false, false, false
+			}
+			return nil, buf, false, true, true
+		}
+	}
+	// Neither framed nor complete: more bytes may still turn the buffer into
+	// a plain DNS message.
+	if _, _, partial := dnsMessageLen(buf); partial {
+		return nil, buf, false, true, true
+	}
+	return nil, buf, false, false, false
+}
+
+// dnsMessageLen inspects b as a DNS query message.
+//
+// It returns the length of the first complete query, whether that query is
+// fully present in b, and whether b can still become one once more bytes
+// arrive.
+func dnsMessageLen(b []byte) (int, bool, bool) {
+	if len(b) < 12 {
+		return 0, false, true
+	}
+	qd := int(binary.BigEndian.Uint16(b[4:6]))
+	an := int(binary.BigEndian.Uint16(b[6:8]))
+	ns := int(binary.BigEndian.Uint16(b[8:10]))
+	ar := int(binary.BigEndian.Uint16(b[10:12]))
+	if qd == 0 || qd > 16 || an > 0 || ns > 0 || ar > 16 {
+		return 0, false, false
+	}
+	off := 12
+	labels := 0
+	for i := 0; i < qd; i++ {
+		next, done, count, valid := skipDNSNameLabels(b, off)
+		if !valid {
+			return 0, false, false
+		}
+		if !done {
+			return 0, false, true
+		}
+		off = next
+		if i == 0 {
+			labels = count
+		}
+		if off+4 > len(b) {
+			return 0, false, true
+		}
+		if binary.BigEndian.Uint16(b[off:off+2]) == 0 ||
+			binary.BigEndian.Uint16(b[off+2:off+4]) == 0 {
+			return 0, false, false
+		}
+		off += 4
+	}
+	if labels == 0 {
+		// A query for the root zone carries no usable name.
+		return 0, false, false
+	}
+	// Additional records (an EDNS0 OPT lives here) close the message.
+	for i := 0; i < ar; i++ {
+		next, done, _, valid := skipDNSNameLabels(b, off)
+		if !valid {
+			return 0, false, false
+		}
+		if !done {
+			return 0, false, true
+		}
+		off = next
+		if off+10 > len(b) {
+			return 0, false, true
+		}
+		rdlen := int(binary.BigEndian.Uint16(b[off+8 : off+10]))
+		off += 10 + rdlen
+		if off > len(b) {
+			return 0, false, true
+		}
+	}
+	return off, true, true
+}
+
+// skipDNSNameLabels walks the DNS name at off. It returns the offset right after
+// the name, whether the name is fully present, how many labels it holds, and
+// whether the bytes are a valid name at all.
+func skipDNSNameLabels(b []byte, off int) (int, bool, int, bool) {
+	labels := 0
+	for {
+		if off >= len(b) {
+			return 0, false, labels, false
+		}
+		length := int(b[off])
+		switch {
+		case length == 0:
+			return off + 1, true, labels, true
+		case length&0xc0 == 0xc0:
+			// A compression pointer ends the name.
+			if off+2 > len(b) {
+				return 0, false, labels, true
+			}
+			return off + 2, true, labels, true
+		case length&0xc0 != 0:
+			return 0, false, labels, false
+		case length > 63:
+			return 0, false, labels, false
+		default:
+			labels++
+			if labels > 128 {
+				return 0, false, labels, false
+			}
+			off += 1 + length
+			if off > len(b) {
+				return 0, false, labels, true
+			}
+		}
+	}
+}
+
 func (rt *runtime) handleDoT(c *tls.Conn) {
 	defer c.Close()
 	// Force handshake to read SNI before we accept data.
@@ -1454,32 +1608,37 @@ func (rt *runtime) handleDoT(c *tls.Conn) {
 		n, err := c.Read(tmp)
 		if n > 0 {
 			buf = append(buf, tmp[:n]...)
-			// parse len-prefixed query frames
-			for len(buf) >= 2 {
-				qlen := binary.BigEndian.Uint16(buf[:2])
-				if qlen < 12 || qlen > 4096 {
+			// RFC 7858 carries the DNS message as-is over TLS: there is no
+			// length prefix. Length-prefixed frames (the DNS-over-TCP style)
+			// are still accepted so older clients keep working, and the answer
+			// is framed the same way the query was.
+			for len(buf) > 0 {
+				query, rest, framed, needMore, ok := nextDoTFrame(buf)
+				if !ok {
 					c.Close()
 					return
 				}
-				if len(buf) < int(2+qlen) {
+				if needMore {
 					break
 				}
-				query := make([]byte, qlen)
-				copy(query, buf[2:2+qlen])
-				buf = buf[2+qlen:]
-				go func(q []byte) {
+				buf = rest
+				go func(q []byte, framed bool) {
 					ans, err := rt.resolve(q, clientID, "dot", normalizeIP(ip), currentConfig.DoTListen.Profile)
 					if err != nil {
 						log.Printf("dot dns error %s: %v", clientID, err)
 						ans = makeErrorResponse(q, 2)
 					}
-					prefix := make([]byte, 2)
-					binary.BigEndian.PutUint16(prefix, uint16(len(ans)))
+					out := ans
+					if framed {
+						prefix := make([]byte, 2)
+						binary.BigEndian.PutUint16(prefix, uint16(len(ans)))
+						out = append(prefix, ans...)
+					}
 					_ = c.SetWriteDeadline(time.Now().Add(10 * time.Second))
-					_, _ = c.Write(prefix)
-					_, _ = c.Write(ans)
-				}(query)
+					_, _ = c.Write(out)
+				}(query, framed)
 			}
+
 		}
 		if err != nil {
 			return
