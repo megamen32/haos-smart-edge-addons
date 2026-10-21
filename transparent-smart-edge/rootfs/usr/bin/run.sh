@@ -51,6 +51,7 @@ LAN_WORLD_PROXY_ENABLED="$(option lan_world_proxy_enabled true)"
 LAN_WORLD_PROXY_PORT="$(option lan_world_proxy_port 3125)"
 LAN_WORLD_PROXY_OUTBOUND_TAG="$(option lan_world_proxy_outbound_tag world-auto)"
 AI_ROUTE_ENABLED="$(option ai_route_enabled true)"
+SMART_DNS_SYNC_URL="$(option smartdns_sync_url http://192.168.2.100:30130/api/internal/smart-dns/clients)"
 
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
@@ -119,9 +120,11 @@ jq \
     --argjson doh_port "$DOH_PORT" \
     --arg edge_ipv4 "$EDGE_IPV4" \
     --argjson proxy_port "$SINGBOX_INTERNAL_PORT" \
+    --arg sync_url "$SMART_DNS_SYNC_URL" \
     '.udpListen = {host: $dns_host, port: $dns_port, profile: "local"}
      | .dohListen = {host: "127.0.0.1", port: $doh_port, profile: "local"}
-     | del(.dotListen, .tls, .publicDnsListen, .sync)
+     | del(.dotListen, .tls, .publicDnsListen)
+     | (if .sync then .sync.url = $sync_url else . end)
      | .httpProxy = {host: "127.0.0.1", port: $proxy_port, timeoutMs: 5000}
      | .edgeProfiles = (.edgeProfiles // {})
      | .edgeProfiles.local = {enabled: true, ipv4: $edge_ipv4, ttl: 60}' \

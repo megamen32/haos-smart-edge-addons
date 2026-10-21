@@ -541,3 +541,49 @@ func TestRuntimeReloadPolicyUpdatesRoutesWithoutDroppingRuntimeState(t *testing.
 		t.Fatal("reload discarded active edge authorization state")
 	}
 }
+
+func TestClientFromSNIRefusesUnknownIdentity(t *testing.T) {
+	previous := currentConfig.DefaultClientID
+	t.Cleanup(func() { currentConfig.DefaultClientID = previous })
+	currentConfig.DefaultClientID = "default-client"
+
+	if id, ok := clientFromSNI("", "dns.bezrabotnyi.com"); ok {
+		t.Fatalf("empty SNI must not resolve to a client, got %q", id)
+	}
+	if id, ok := clientFromSNI("other.example.com", "dns.bezrabotnyi.com"); ok {
+		t.Fatalf("foreign SNI must not resolve to a client, got %q", id)
+	}
+	if id, ok := clientFromSNI("dns.bezrabotnyi.com", "dns.bezrabotnyi.com"); !ok || id != "default-client" {
+		t.Fatalf("base SNI must resolve to the default client, got %q ok=%v", id, ok)
+	}
+	if id, ok := clientFromSNI("client-1.dns.bezrabotnyi.com", "dns.bezrabotnyi.com"); !ok || id != "client-1" {
+		t.Fatalf("client SNI must resolve to its own id, got %q ok=%v", id, ok)
+	}
+}
+
+func TestEdgeAuthFailsClosedWithoutConfiguredToken(t *testing.T) {
+	previous := currentConfig.EdgeAuth.Token
+	t.Cleanup(func() { currentConfig.EdgeAuth.Token = previous })
+	currentConfig.EdgeAuth.Token = ""
+
+	server := &dohServer{rt: newRuntime()}
+	request := httptest.NewRequest(http.MethodGet, "/edge-auth?ip=203.0.113.7", nil)
+	recorder := httptest.NewRecorder()
+	server.handleEdgeAPI(recorder, request, request.URL)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("edge API without a configured token answered %d, want %d", recorder.Code, http.StatusForbidden)
+	}
+}
+
+func TestPolicyDecidesGitHubRouteWithoutBuiltinDirectFallback(t *testing.T) {
+	rt := newRuntime()
+	rt.defaultRoute = "proxy"
+	rt.rules = []routingRule{
+		{Text: "github.com", Match: "suffix", Through: []string{"vpn2"}, Conditions: []string{"externalDns", "internalDns"}},
+	}
+
+	if route := rt.routeFor("github.com", "public"); route != "proxy" {
+		t.Fatalf("github.com route = %s, want proxy: a policy rule must not be shadowed by a built-in list", route)
+	}
+}

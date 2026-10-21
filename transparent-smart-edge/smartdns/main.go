@@ -427,18 +427,11 @@ func loadConfig(path string) (*config, *runtime, error) {
 	// rules are canonical. The legacy arrays below remain only until the
 	// deployment renderer stops emitting them; routeFor prefers rules.
 	rt.rules = cfg.Rules
+	// Hard-direct exceptions are opt-in. Without an explicit list the panel
+	// policy decides every domain, so a built-in fallback can no longer
+	// shadow a policy rule.
 	rt.hardSuffixes = toLowerSlice(cfg.HardDirect)
-	if len(rt.hardSuffixes) == 0 {
-		rt.hardSuffixes = []string{"github.com", "githubusercontent.com", "githubassets.com", "github.io"}
-	}
 	rt.hardDomains = toSetLower(cfg.HardDirectDom)
-	if len(rt.hardDomains) == 0 {
-		rt.hardDomains = toSetLower([]string{
-			"github.com", "www.github.com", "ssh.github.com", "api.github.com",
-			"gist.github.com", "raw.githubusercontent.com", "objects.githubusercontent.com",
-			"github.githubassets.com",
-		})
-	}
 
 	// clientsByIP: normalize keys through normalizeIP so users can write
 	// "192.168.2.10" or "::ffff:192.168.2.10" etc.
@@ -1170,7 +1163,14 @@ func (d *dohServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (d *dohServer) handleEdgeAPI(w http.ResponseWriter, r *http.Request, u *url.URL) {
 	tok := r.Header.Get("x-edge-auth-token")
-	if currentConfig.EdgeAuth.Token != "" && tok != currentConfig.EdgeAuth.Token {
+	if currentConfig.EdgeAuth.Token == "" {
+		// Fail closed. An edge API without a shared secret must not answer
+		// every caller that reaches the port.
+		log.Printf("edge-auth denied: edgeAuth.token is not configured")
+		http.Error(w, "", http.StatusForbidden)
+		return
+	}
+	if tok != currentConfig.EdgeAuth.Token {
 		http.Error(w, "", http.StatusForbidden)
 		return
 	}
@@ -1434,9 +1434,13 @@ func (rt *runtime) handleDoT(c *tls.Conn) {
 		return
 	}
 	sni := c.ConnectionState().ServerName
-	clientID := clientFromSNI(sni, rtBase(rt))
-	_, ok := rt.lookupClient(clientID)
-	if !ok {
+	clientID, identified := clientFromSNI(sni, rtBase(rt))
+	if !identified {
+		log.Printf("dot reject %s %s: no client identity in SNI", c.RemoteAddr(), sni)
+		c.Close()
+		return
+	}
+	if _, ok := rt.lookupClient(clientID); !ok {
 		log.Printf("dot reject %s %s %s", c.RemoteAddr(), sni, clientID)
 		c.Close()
 		return
@@ -1487,15 +1491,27 @@ func rtBase(rt *runtime) string {
 	return currentConfig.BaseDotName
 }
 
-func clientFromSNI(sni string, baseDot string) string {
+// clientFromSNI maps the DoT SNI onto a client identity. An unknown name is
+// refused instead of falling back to the default client: a revoked client
+// could otherwise keep the service by hiding behind a foreign or empty SNI
+// and being served under the default client's identity.
+func clientFromSNI(sni string, baseDot string) (string, bool) {
 	sni = normalizeName(sni)
-	if sni == "" || sni == normalizeName(baseDot) {
-		return currentConfig.DefaultClientID
+	base := normalizeName(baseDot)
+	if base == "" {
+		return "", false
 	}
-	if strings.HasSuffix(sni, "."+normalizeName(baseDot)) {
-		return sni[:len(sni)-len(normalizeName(baseDot))-1]
+	if sni == base {
+		// The shared entry name carries no per-client identity.
+		if currentConfig.DefaultClientID == "" {
+			return "", false
+		}
+		return currentConfig.DefaultClientID, true
 	}
-	return currentConfig.DefaultClientID
+	if strings.HasSuffix(sni, "."+base) {
+		return sni[:len(sni)-len(base)-1], true
+	}
+	return "", false
 }
 
 // ---------------------------------------------------------------------------

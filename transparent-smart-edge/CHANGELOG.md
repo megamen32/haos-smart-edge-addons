@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.26
+
+- Add the `smartdns_sync_url` option (default
+  `http://192.168.2.100:30130/api/internal/smart-dns/clients`): the add-on
+  keeps its own `.sync` block instead of dropping it, so the edge pulls the
+  canonical client policy from the VPN Panel control plane on its own.
+- Adopt the SmartDNS P0 fixes from the VPN Panel source of truth: the edge
+  API fails closed when no token is configured, and the DoT client identity
+  accepts only the base name or a known `<client_id>.<base>` suffix.
+- Build and publish this image from THIS repository
+  (`.github/workflows/build-haos-addon.yaml`); the add-on build no longer
+  depends on a private pipeline.
+
 ## 0.1.25
 
 - Add the `world` LAN proxy lane on port `3125` through the new options

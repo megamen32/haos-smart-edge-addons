@@ -19,8 +19,9 @@ Runs SmartDNS, a transparent TLS edge, and a pinned sing-box transport in one
 Supervisor-managed container. Runtime transport credentials are not stored in
 this repository or its container image.
 
-The current image is built by the VPN Panel repository workflow and published
-as `ghcr.io/megamen32/vpn-panel-haos-smart-edge`. This repository keeps the
-HAOS Store metadata. The matching functional changes here are mirrored into
-that workflow input; there is no second image publisher.
+The current image is built by this repository's own workflow
+(`.github/workflows/build-haos-addon.yaml`) and published as
+`ghcr.io/megamen32/vpn-panel-haos-smart-edge`; the HAOS supervisor pulls
+that image by the add-on version. This repository owns both the add-on
+source and the HAOS Store metadata, and there is no second image publisher.
 
