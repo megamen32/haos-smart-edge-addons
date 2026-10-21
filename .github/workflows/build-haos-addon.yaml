@@ -5,6 +5,10 @@ name: Build Smart Edge add-on image
 # ghcr.io/megamen32/vpn-panel-haos-smart-edge:<version> and updates the
 # running add-on by itself. A public repository gets free GitHub Actions
 # minutes, so the add-on build no longer depends on a private pipeline.
+#
+# The registry password is a personal access token kept in the repository
+# secrets (GHCR_TOKEN/GHCR_USERNAME): the workflow token of this repository
+# is not linked to the existing GHCR packages and cannot push to them.
 
 on:
   push:
@@ -79,7 +83,8 @@ jobs:
         uses: home-assistant/builder/actions/build-image@2026.06.0
         with:
           arch: ${{ matrix.arch }}
-          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          container-registry-username: ${{ secrets.GHCR_USERNAME }}
+          container-registry-password: ${{ secrets.GHCR_TOKEN }}
           context: ./${{ env.APP_PATH }}
           image: ${{ matrix.image }}
           image-tags: |
@@ -106,7 +111,8 @@ jobs:
         uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.06.0
         with:
           architectures: ${{ needs.prepare.outputs.architectures }}
-          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          container-registry-username: ${{ secrets.GHCR_USERNAME }}
+          container-registry-password: ${{ secrets.GHCR_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
           image-tags: |
             ${{ needs.prepare.outputs.version }}
