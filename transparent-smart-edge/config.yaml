@@ -1,5 +1,5 @@
 name: "Bezrabotnyi Transparent Smart Edge"
-version: "0.1.27"
+version: "0.1.28"
 slug: bezrabotnyi_transparent_smart_edge
 description: "Supervisor-managed VPN Panel SmartDNS, sing-box, and transparent TLS edge"
 url: "https://github.com/megamen32/haos-smart-edge-addons/tree/main/transparent-smart-edge"
@@ -42,6 +42,15 @@ options:
   lan_ru_proxy_outbound_tag: "direct"
   ai_route_enabled: true
   smartdns_sync_url: "http://192.168.2.100:30130/api/internal/smart-dns/clients"
+  # The public DNS profile: the resolver that serves the clients outside the
+  # LAN. It stays off until the public DoH/DoT moves from the panel host to
+  # this edge, so the add-on behaves exactly as before until then.
+  public_dns_enabled: false
+  public_doh_port: 18054
+  public_dot_port: 18853
+  public_plain_port: 5354
+  public_tls_cert_file: ""
+  public_tls_key_file: ""
 schema:
   dns_listen_host: "str"
   dns_port: "int(1,65535)"
@@ -72,12 +81,18 @@ schema:
   lan_ru_proxy_outbound_tag: "str"
   ai_route_enabled: "bool"
   smartdns_sync_url: "str"
+  public_dns_enabled: "bool"
+  public_doh_port: "int(1,65535)"
+  public_dot_port: "int(1,65535)"
+  public_plain_port: "int(1,65535)"
+  public_tls_cert_file: "str"
+  public_tls_key_file: "str"
 
 panel_icon: "mdi:shield-link-variant"
 # Built and published from THIS repository by
 # .github/workflows/build-haos-addon.yaml. No tag here: the supervisor
 # rejects a tagged image in config.yaml and appends `version:` itself.
-# Leaving this unset makes the supervisor build the add-on on a VM
+# it here. Leaving this unset makes the supervisor build the add-on on a VM
 # with 3.7 GiB of RAM and no swap, which starves the live healthcheck badly
 # enough for the supervisor to recreate the running container. It used to
 # pin a fork's registry image, which made code changes here a silent no-op.

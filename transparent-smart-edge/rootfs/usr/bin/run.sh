@@ -26,6 +26,16 @@ require_port() {
 DNS_LISTEN_HOST="$(option dns_listen_host 0.0.0.0)"
 DNS_PORT="$(option dns_port 1053)"
 DOH_PORT="$(option doh_port 18053)"
+# The public DNS profile is optional. While it is off, the DoH listener stays
+# on the loopback and serves the LAN profile, exactly as before. When it is on,
+# this edge serves the public profile for the clients outside the LAN: DoH,
+# DoT over TLS and plain DNS.
+PUBLIC_DNS_ENABLED="$(option public_dns_enabled false)"
+PUBLIC_DOH_PORT="$(option public_doh_port 18054)"
+PUBLIC_DOT_PORT="$(option public_dot_port 18853)"
+PUBLIC_DNS_PORT="$(option public_plain_port 5354)"
+PUBLIC_TLS_CERT_FILE="$(option public_tls_cert_file "")"
+PUBLIC_TLS_KEY_FILE="$(option public_tls_key_file "")"
 EDGE_LISTEN_HOST="$(option edge_listen_host 0.0.0.0)"
 EDGE_PORT="$(option edge_port 10443)"
 EDGE_IPV4="$(option edge_ipv4 192.168.2.1)"
@@ -56,6 +66,9 @@ SMART_DNS_SYNC_URL="$(option smartdns_sync_url http://192.168.2.100:30130/api/in
 require_port dns_port "$DNS_PORT"
 require_port doh_port "$DOH_PORT"
 require_port edge_port "$EDGE_PORT"
+require_port public_doh_port "$PUBLIC_DOH_PORT"
+require_port public_dot_port "$PUBLIC_DOT_PORT"
+require_port public_plain_port "$PUBLIC_DNS_PORT"
 require_port singbox_internal_port "$SINGBOX_INTERNAL_PORT"
 require_port telegram_tproxy_port "$TELEGRAM_TPROXY_PORT"
 require_port lan_us_proxy_port "$LAN_US_PROXY_PORT"
@@ -121,9 +134,29 @@ jq \
     --arg edge_ipv4 "$EDGE_IPV4" \
     --argjson proxy_port "$SINGBOX_INTERNAL_PORT" \
     --arg sync_url "$SMART_DNS_SYNC_URL" \
+    --arg public_enabled "$PUBLIC_DNS_ENABLED" \
+    --argjson public_doh_port "$PUBLIC_DOH_PORT" \
+    --argjson public_dot_port "$PUBLIC_DOT_PORT" \
+    --argjson public_plain_port "$PUBLIC_DNS_PORT" \
+    --arg public_cert "$PUBLIC_TLS_CERT_FILE" \
+    --arg public_key "$PUBLIC_TLS_KEY_FILE" \
     '.udpListen = {host: $dns_host, port: $dns_port, profile: "local"}
-     | .dohListen = {host: "127.0.0.1", port: $doh_port, profile: "local"}
-     | del(.dotListen, .tls, .publicDnsListen)
+     | (if $public_enabled == "true" then
+          # The public profile answers with the public alias of the selected
+          # exit and is reached from outside the LAN.
+          .dohListen = {host: $dns_host, port: $public_doh_port, profile: "public"}
+          | .dotListen = {host: $dns_host, port: $public_dot_port, profile: "public"}
+          | .publicDnsListen = {host: $dns_host, port: $public_plain_port, profile: "public"}
+          | (if $public_cert != "" and $public_key != "" then
+               .tls = {certFile: $public_cert, keyFile: $public_key}
+               | .dohTls = true
+               | .proxyProtocol = true
+             else . end)
+        else
+          .dohListen = {host: "127.0.0.1", port: $doh_port, profile: "local"}
+          | del(.dotListen, .tls, .publicDnsListen)
+          | del(.dohTls, .proxyProtocol)
+        end)
      | (if .sync then .sync.url = $sync_url else . end)
      | .httpProxy = {host: "127.0.0.1", port: $proxy_port, timeoutMs: 5000}
      | .edgeProfiles = (.edgeProfiles // {})

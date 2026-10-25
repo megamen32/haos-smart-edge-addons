@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.28
+
+- Add the optional public DNS profile. While `public_dns_enabled` is off the
+  add-on behaves exactly as before; when it is on the edge serves the public
+  profile itself: DoH over TLS, DoT over TLS and plain DNS.
+- Serve the DoH listener with the certificate and negotiate HTTP/2 through
+  ALPN, which RFC 8484 requires from a DoH server.
+- Read the PROXY protocol header on the DoH listener, so the resolver sees
+  the real client address behind the SNI router instead of the router itself.
+  Without it the edge authorization would be granted to the wrong address.
+
 ## 0.1.27
 
 - Fix the DoT listener: it parses plain DNS messages as RFC 7858 requires

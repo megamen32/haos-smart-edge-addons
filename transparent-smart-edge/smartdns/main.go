@@ -89,6 +89,12 @@ type config struct {
 	ProxyDoH        proxyDoHCfg           `json:"proxyDoh"`
 	BackupDoH       proxyDoHCfg           `json:"backupDoh"`
 	TLS             tlsCfg                `json:"tls"`
+	// DoHTLS serves the DoH listener with the certificate of the tls section.
+	// RFC 8484 asks a DoH server for HTTP/2, which needs TLS or h2c.
+	DoHTLS bool `json:"dohTls"`
+	// ProxyProtocol expects the PROXY protocol header on the DoH listener, so
+	// the resolver sees the real client address behind the SNI router.
+	ProxyProtocol bool `json:"proxyProtocol"`
 	Clients         sync.Map              `json:"-"` // local clients map; populated from local+remote
 	Rules           []routingRule         `json:"rules"`
 	Sync            syncCfg               `json:"sync"`
@@ -305,6 +311,8 @@ func loadConfig(path string) (*config, *runtime, error) {
 		ProxyDoH          proxyDoHCfg               `json:"proxyDoh"`
 		BackupDoH         proxyDoHCfg               `json:"backupDoh"`
 		TLS               tlsCfg                    `json:"tls"`
+		DoHTLS            bool                      `json:"dohTls"`
+		ProxyProtocol     bool                      `json:"proxyProtocol"`
 		Clients           map[string]map[string]any `json:"clients"`
 		Sync              syncCfg                   `json:"sync"`
 		EdgeProfiles      map[string]*smartEdge     `json:"edgeProfiles"`
@@ -337,6 +345,8 @@ func loadConfig(path string) (*config, *runtime, error) {
 		ProxyDoH:          rawCfg.ProxyDoH,
 		BackupDoH:         rawCfg.BackupDoH,
 		TLS:               rawCfg.TLS,
+		DoHTLS:            rawCfg.DoHTLS,
+		ProxyProtocol:     rawCfg.ProxyProtocol,
 		Sync:              rawCfg.Sync,
 		EdgeProfiles:      rawCfg.EdgeProfiles,
 		SmartEdge:         rawCfg.SmartEdge,
@@ -1935,10 +1945,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("doh setup error: %v", err)
 	}
+	// The public edge sits behind an SNI router that passes the real client
+	// address with the PROXY protocol. Without it the resolver would only see
+	// the router and would grant the edge authorization to the wrong address.
+	if cfg.ProxyProtocol {
+		dohListener = &proxyProtocolListener{Listener: dohListener}
+	}
 	go func() {
 		log.Printf("DoH listening %s", hs.Addr)
-		if err := hs.Serve(dohListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("doh exit: %v", err)
+		var serveErr error
+		if cfg.DoHTLS && cfg.TLS.CertFile != "" && cfg.TLS.KeyFile != "" {
+			// ServeTLS loads the certificate and negotiates HTTP/2 through
+			// ALPN, which RFC 8484 requires from a DoH server.
+			serveErr = hs.ServeTLS(dohListener, cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		} else {
+			serveErr = hs.Serve(dohListener)
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			log.Printf("doh exit: %v", serveErr)
 		}
 	}()
 
