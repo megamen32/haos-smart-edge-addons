@@ -98,18 +98,54 @@ var (
 		return (&net.Resolver{PreferGo: true}).LookupIP(ctx, "ip4", host)
 	}
 	dialTCP = net.DialTimeout
-	// localAddresses is captured once at init. InterfaceAddrs() failing is not
-	// worth killing a working proxy over, so we degrade to refusing loopback and
-	// unspecified addresses only and log why.
-	localAddresses = func() []net.Addr {
-		addresses, err := net.InterfaceAddrs()
-		if err != nil {
-			log.Printf("warning: cannot enumerate local addresses (%v); only loopback and unspecified destinations will be refused", err)
-			return nil
-		}
-		return addresses
-	}()
+	// localAddresses holds the host's own addresses. It is refreshed on demand
+	// rather than only at startup: an address change must not leave the guard
+	// holding a stale snapshot, because a destination that resolves to an
+	// address the host owns is exactly the case the guard exists to catch.
+	// On 2026-11-01 vpn2's public address changed while the edge process had
+	// been running since 2026-09-16, and the stale snapshot let a name that
+	// resolves to the host's own address pass the guard and recurse forever.
+	// `localAddressesAt` bounds how often a miss may re-read the interface
+	// list, so a storm of misses cannot become the load the guard prevents.
+	localAddressesMu sync.Mutex
+	localAddresses   []net.Addr
+	localAddressesAt time.Time
 )
+
+// localAddressRefreshInterval bounds how often a miss may re-read the
+// interface list.
+const localAddressRefreshInterval = 30 * time.Second
+
+// refreshLocalAddresses re-reads the host's own addresses.
+func refreshLocalAddresses() []net.Addr {
+	localAddressesMu.Lock()
+	defer localAddressesMu.Unlock()
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		// InterfaceAddrs() failing is not worth killing a working proxy over,
+		// so we degrade to refusing loopback and unspecified addresses only
+		// and log why.
+		log.Printf("warning: cannot enumerate local addresses (%v); only loopback and unspecified destinations will be refused", err)
+		addresses = nil
+	}
+	localAddresses = addresses
+	localAddressesAt = time.Now()
+	return localAddresses
+}
+
+// localAddressSnapshot returns the cached address list, refreshing it when it
+// is older than the refresh interval.
+func localAddressSnapshot() []net.Addr {
+	localAddressesMu.Lock()
+	stale := localAddresses == nil || time.Since(localAddressesAt) >= localAddressRefreshInterval
+	localAddressesMu.Unlock()
+	if stale {
+		return refreshLocalAddresses()
+	}
+	localAddressesMu.Lock()
+	defer localAddressesMu.Unlock()
+	return localAddresses
+}
 
 type dnsCacheEntry struct {
 	ip      net.IP
@@ -856,11 +892,28 @@ func remainingBudget(deadline time.Time) time.Duration {
 
 // A direct SNI destination must not return to this host's public TLS ingress.
 // Otherwise nginx -> smart-edge -> nginx recirculates one ClientHello forever.
+//
+// The interface list is a snapshot, and a snapshot goes stale: on 2026-11-01
+// vpn2's public address changed from 212.192.31.128 to 2.27.194.118 while the
+// edge process had been running since 2026-09-16. The old snapshot did not
+// contain the new address, so the name that resolves to the host's own
+// address passed the guard and the edge dialled its own :443, recursing one
+// ClientHello forever at ~28 000 connections a minute. That pinned the single
+// vCPU at 88-98 % and left the name unanswered
+// (inc_4fa1420049dc4df493910cb5d375e593).
+//
+// So the check does two things. It consults a snapshot that is refreshed on a
+// miss and at least every localAddressRefreshInterval, so an address change
+// cannot outlive the guard. And on a miss it asks the kernel directly whether
+// it would route that address locally, by binding a socket to it and
+// comparing the source address the kernel chose: the routing table is the
+// authority on which addresses this host answers for, and it is always
+// current.
 func isLocalDestination(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsUnspecified() {
 		return true
 	}
-	for _, address := range localAddresses {
+	for _, address := range localAddressSnapshot() {
 		if network, ok := address.(*net.IPNet); ok && network.IP.Equal(ip) {
 			return true
 		}
@@ -868,7 +921,39 @@ func isLocalDestination(ip net.IP) bool {
 			return true
 		}
 	}
+	// The snapshot did not know this address. Ask the kernel before allowing
+	// the dial: if the kernel would source the connection from this very
+	// address, the destination is this host and the dial would loop.
+	local, err := kernelRoutesLocally(ip)
+	if err == nil && local {
+		// The address is local after all - the snapshot was stale. Record it
+		// so the next check is cheap.
+		localAddressesMu.Lock()
+		if localAddresses == nil {
+			localAddresses = []net.Addr{}
+		}
+		localAddresses = append(localAddresses, &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)})
+		localAddressesMu.Unlock()
+		return true
+	}
 	return false
+}
+
+// kernelRoutesLocally reports whether the kernel would source a connection
+// to ip from ip itself. A connected UDP socket picks its source address
+// through the same routing decision a TCP dial uses, so an equal source
+// address means the destination is this host.
+func kernelRoutesLocally(ip net.IP) (bool, error) {
+	conn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: ip, Port: 0})
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	local, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return false, errors.New("unexpected local address type")
+	}
+	return local.IP.Equal(ip), nil
 }
 
 // connectWithRetry dials upstream:CONNECT_PORT up to maxRetries times.

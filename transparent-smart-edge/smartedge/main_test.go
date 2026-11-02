@@ -931,6 +931,70 @@ func TestLocalDestinationIsRefusedWithoutDialing(t *testing.T) {
 	}
 }
 
+// A snapshot taken before an address change must not survive it. This is the
+// vpn2 case of 2026-11-01: the process had been running since 2026-09-16 and
+// held the old public address, so the name that resolves to the host's own
+// new address passed the guard and the edge dialled its own :443 forever.
+func TestStaleSnapshotStillRefusesOwnAddress(t *testing.T) {
+	c := saveConfig()
+	defer restoreConfig(c)
+	resetCaches()
+	configure("", "", 0)
+
+	oldLocal := localAddresses
+	oldAt := localAddressesAt
+	defer func() { localAddresses, localAddressesAt = oldLocal, oldAt }()
+
+	// The address must be one this host really owns, otherwise the kernel is
+	// right to say it belongs to somebody else.
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		t.Skipf("cannot enumerate local addresses: %v", err)
+	}
+	var own net.IP
+	for _, a := range addrs {
+		var ip net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip != nil && ip.To4() != nil && !ip.IsLoopback() {
+			own = ip
+			break
+		}
+	}
+	if own == nil {
+		t.Skip("no non-loopback IPv4 address on this host")
+	}
+
+	// The snapshot knows only the address the host had at startup.
+	localAddresses = []net.Addr{&net.IPNet{IP: net.IPv4(203, 0, 113, 7), Mask: net.CIDRMask(32, 32)}}
+	localAddressesAt = time.Now()
+
+	lookupIPv4 = func(context.Context, string) ([]net.IP, error) {
+		return []net.IP{own}, nil
+	}
+	dials := 0
+	dialTCP = func(string, string, time.Duration) (net.Conn, error) {
+		dials++
+		return nil, errors.New("should not be called")
+	}
+
+	conn, _, err := connectUpstream("tg.bezrabotnyi.com", []byte("hi"))
+	if conn != nil {
+		_ = conn.Close()
+		t.Fatal("expected no connection for a local destination")
+	}
+	if err == nil || !strings.Contains(err.Error(), "forwarding loop") {
+		t.Fatalf("err = %v, want a forwarding loop refusal", err)
+	}
+	if dials != 0 {
+		t.Fatalf("local destination was dialed %d times", dials)
+	}
+}
+
 func TestLocalDestinationRefusalDoesNotMarkAnUpstreamFailing(t *testing.T) {
 	c := saveConfig()
 	defer restoreConfig(c)
