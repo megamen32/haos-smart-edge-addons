@@ -59,6 +59,24 @@ bash "$runtime_configurer" "$work_dir/generated.json" "$work_dir/runtime.json" t
 SING_BOX_BIN="$work_dir/sing-box" \
   bash "$validator" "$work_dir/runtime.json" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto true
 
+# The panel adds the authenticated QUIC leaf after the VLESS importer.
+# Startup validation and OpenAI expansion must both accept that real transport.
+jq '.outbounds += [{type:"hysteria2",tag:"us-hysteria2",server:"us.example",server_port:24443,password:"test-private-auth",tls:{enabled:true,server_name:"us.example",alpn:["h3"]}}]
+    | .outbounds |= map(if .tag == "us-regional" then .outbounds += ["us-hysteria2"] else . end)'   "$work_dir/generated.json" >"$work_dir/generated-hy2.json"
+bash "$runtime_configurer" "$work_dir/generated-hy2.json" "$work_dir/runtime-hy2.json" true 12555 us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto "$work_dir/proxy-users.json" true
+validate_hy2_runtime() {
+  SING_BOX_BIN="$work_dir/sing-box" bash "$validator" "$1" 23128 de-regional us-regional true 3127 us-regional true 3128 de-regional true 3126 fi-helsinki true 3130 direct true 3125 world-auto true
+}
+validate_hy2_runtime "$work_dir/runtime-hy2.json"
+jq -e '(.outbounds[] | select(.tag == "openai-us-route") | .outbounds | index("us-hysteria2")) != null' "$work_dir/runtime-hy2.json" >/dev/null
+for mutation in '.password = ""' '.tls.enabled = false' '.tls.insecure = true' '.tls.server_name = ""'; do
+  jq ".outbounds |= map(if .tag == \"us-hysteria2\" then $mutation else . end)" "$work_dir/runtime-hy2.json" >"$work_dir/runtime-hy2-invalid.json"
+  if validate_hy2_runtime "$work_dir/runtime-hy2-invalid.json" >"$work_dir/invalid-check.log" 2>&1; then
+    printf 'validator accepted unsafe Hysteria 2 configuration: %s\n' "$mutation" >&2
+    exit 1
+  fi
+done
+
 jq -e '
   ([.inbounds[] | select(.type == "http" and .tag == "lan-us-http" and .listen == "0.0.0.0" and .listen_port == 3127 and ((.users // []) | length) == 0)] | length) == 1
   and ([.route.rules[] | select(.outbound == "us-regional" and ((.inbound // []) | index("lan-us-http")))] | length) == 1
@@ -86,7 +104,7 @@ jq -e '
 jq -e '
   (.outbounds[] | select(.tag == "ai-route")) as $sel
   | $sel.type == "selector"
-  and ($sel.outbounds == ["fi-helsinki","de-regional","us-regional"])
+  and ($sel.outbounds == ["fi-helsinki","de-regional"])
   and ($sel.default == "fi-helsinki")
   and (.experimental.clash_api.external_controller == "127.0.0.1:9095")
   and ((([.outbounds[].tag] as $tags | [$sel.outbounds[] | select(. as $m | ($tags | index($m)) == null)] | length)) == 0)

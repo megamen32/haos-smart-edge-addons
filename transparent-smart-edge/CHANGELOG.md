@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.31
+
+- Build sing-box with QUIC support for the authenticated VUSA Hysteria 2 exit.
+- Accept verified TLS Hysteria 2 leaves in regional startup validation.
+- Synchronize the canonical VPN Panel runtime, including health-checked US-first OpenAI routing with healthy tunnel fallback.
+- Keep transport credentials private in the app data volume.
+
 ## 0.1.28
 
 - Add the optional public DNS profile. While `public_dns_enabled` is off the

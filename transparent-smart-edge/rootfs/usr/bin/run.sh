@@ -142,16 +142,19 @@ jq \
     --arg public_key "$PUBLIC_TLS_KEY_FILE" \
     '.udpListen = {host: $dns_host, port: $dns_port, profile: "local"}
      | (if $public_enabled == "true" then
-          # The public profile answers with the public alias of the selected
-          # exit and is reached from outside the LAN.
-          .dohListen = {host: $dns_host, port: $public_doh_port, profile: "public"}
+          # The local listener stays on plain HTTP: it serves the LAN profile
+          # and the panel API (the edge allow-list CRUD). The public edge is a
+          # second listener that terminates TLS with the public certificate
+          # and speaks the PROXY protocol, so the resolver sees the real
+          # client address behind the SNI router.
+          .dohListen = {host: $dns_host, port: $doh_port, profile: "local"}
+          | .publicDoHListen = {host: $dns_host, port: $public_doh_port, profile: "public"}
           | .dotListen = {host: $dns_host, port: $public_dot_port, profile: "public"}
           | .publicDnsListen = {host: $dns_host, port: $public_plain_port, profile: "public"}
           | (if $public_cert != "" and $public_key != "" then
                .tls = {certFile: $public_cert, keyFile: $public_key}
-               | .dohTls = true
-               | .proxyProtocol = true
              else . end)
+          | del(.dohTls, .proxyProtocol)
         else
           .dohListen = {host: "127.0.0.1", port: $doh_port, profile: "local"}
           | del(.dotListen, .tls, .publicDnsListen)

@@ -26,6 +26,14 @@ proxy_users_file="${21:?missing proxy users file}"
 ai_route_enabled="${22:?missing AI route enabled}"
 ai_domains_csv="${23:-openai.com,chatgpt.com,oaistatic.com,oaiusercontent.com,oaistatsig.com,sora.com,anthropic.com,claude.ai,claude.com}"
 clash_api_address="${CLASH_API_ADDRESS:-127.0.0.1:9095}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+openai_policy="${OPENAI_US_POLICY_PATH:-$script_dir/../../etc/transparent-smart-edge/openai-us-policy.json}"
+openai_renderer="$script_dir/../lib/openai-us-routing.jq"
+umask 077
+staged="${destination}.base.$$"
+candidate="${destination}.openai.$$"
+trap 'rm -f "$staged" "$candidate"' EXIT INT TERM
+
 
 jq -e '(.users | type == "array") and all(.users[]?; (.username | type == "string" and length > 0) and (.password | type == "string" and length > 0))' "$proxy_users_file" >/dev/null
 
@@ -73,7 +81,7 @@ jq \
       and ((.outbound // "") != "ai-route" and (.outbound // "") != "telegram-route")
     )))
   | if $telegram_enabled then
-      ([$lan_de_outbound, $lan_us_outbound, $lan_fi_outbound] | unique) as $wanted
+      ([$lan_de_outbound, $lan_fi_outbound] | unique) as $wanted
       | ([.outbounds[]?.tag]) as $known
       | ([$wanted[] | select(. as $t | ($known | index($t)) != null)]) as $members
       | if ($members | length) == 0 then error("no native Telegram route candidates") else . end
@@ -83,7 +91,7 @@ jq \
       | .route.rules = ([{inbound:["telegram-tproxy"],outbound:"telegram-route"}] + .route.rules)
     else . end
   | if $ai_route_enabled then
-      ([$lan_fi_outbound, $lan_de_outbound, $lan_us_outbound] | map(select(. != "")) | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $ai_candidates
+      ([$lan_fi_outbound, $lan_de_outbound] | map(select(. != "")) | reduce .[] as $x ([]; if index($x) then . else . + [$x] end)) as $ai_candidates
       | ([(.outbounds // [])[]? | .tag]) as $known_tags
       | ([$ai_candidates[] | select(. as $t | ($known_tags | index($t)) != null)]) as $ai_members
       | if ($ai_members | length) > 0 then
@@ -117,4 +125,12 @@ jq \
       | .route.rules = ([{inbound:["lan-ru-http"],outbound:$lan_ru_outbound}] + .route.rules)
       | .route.rules = ([{inbound:["wan-ru-http"],outbound:$lan_ru_outbound}] + .route.rules)
     else . end
-' "$source_config" >"$destination"
+' "$source_config" >"$staged"
+
+# Install the domain-specific guard after general LAN routes are rendered,
+# so a world/FI/DE/direct catch-all cannot steal an OpenAI connection.
+jq --slurpfile policy "$openai_policy" --arg us_tag "$lan_us_outbound" \
+  --arg fi_tag "$lan_fi_outbound" --arg de_tag "$lan_de_outbound" --arg world_tag "$lan_world_outbound" \
+  --arg clash_api "$clash_api_address" -f "$openai_renderer" "$staged" >"$candidate"
+chmod 0600 "$candidate"
+mv -f "$candidate" "$destination"

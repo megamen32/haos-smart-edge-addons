@@ -55,7 +55,7 @@ import (
 )
 
 // Smart-Edge IPs (must match main.go edge-map).
-var edgeIPs = []string{"212.192.31.128", "185.240.120.152"}
+var edgeIPs = []string{"2.27.194.118", "185.240.120.152"}
 
 type counter struct{ pass, fail, skip int }
 

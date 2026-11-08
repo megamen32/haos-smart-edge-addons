@@ -227,7 +227,7 @@ func TestStaticAAnswerPrecedesPublicRouting(t *testing.T) {
 	rt.defaultRoute = "proxy"
 	rt.staticA = map[string][]string{
 		"bezrabotnyi.com":      {"95.165.165.65"},
-		"vpn2.bezrabotnyi.com": {"212.192.31.128"},
+		"vpn2.bezrabotnyi.com": {"2.27.194.118"},
 		"vusa.bezrabotnyi.com": {"185.240.120.152"},
 	}
 	rt.staticASuffix = map[string][]string{"bezrabotnyi.com": {"95.165.165.65"}}
@@ -249,7 +249,7 @@ func TestStaticAAnswerPrecedesPublicRouting(t *testing.T) {
 		t.Fatalf("zone apex static answer = %v", got)
 	}
 	pinned := map[string]string{
-		"vpn2.bezrabotnyi.com": "212.192.31.128",
+		"vpn2.bezrabotnyi.com": "2.27.194.118",
 		"vusa.bezrabotnyi.com": "185.240.120.152",
 	}
 	queryID := uint16(0x4400)
@@ -276,7 +276,7 @@ func TestAntigravityUsesVUSAForPublicAndLocalEdgeForLAN(t *testing.T) {
 	rt.defaultRoute = "direct"
 	rt.vusaProxySuffixes = []string{"antigravity.google", "gweb-jetski.appspot.com"}
 	rt.edgeProfiles = map[string]*smartEdge{
-		"public": {Enabled: true, IPv4s: []string{"212.192.31.128"}, TTL: 60},
+		"public": {Enabled: true, IPv4s: []string{"2.27.194.118"}, TTL: 60},
 		"vusa":   {Enabled: true, IPv4s: []string{"185.240.120.152"}, TTL: 60},
 		"local":  {Enabled: true, IPv4s: []string{"192.168.2.75"}, TTL: 60},
 	}

@@ -78,6 +78,11 @@ type config struct {
 	DefaultClientID string                `json:"defaultClientId"`
 	BaseDotName     string                `json:"baseDotName"`
 	DoHListen       listenCfg             `json:"dohListen"`
+	// PublicDoHListen is an optional second DoH listener for the public edge.
+	// It always terminates TLS and always speaks the PROXY protocol, because
+	// the SNI router in front of it has to pass the real client address:
+	// otherwise every Internet client would share one edge authorization.
+	PublicDoHListen *listenCfg            `json:"publicDoHListen,omitempty"`
 	DoTListen       listenCfg             `json:"dotListen"`
 	UDPListen       listenCfg             `json:"udpListen"` // optional plain DNS-over-UDP (default :5353)
 	PublicDNSListen listenCfg             `json:"publicDnsListen"`
@@ -300,6 +305,7 @@ func loadConfig(path string) (*config, *runtime, error) {
 		DefaultClientID   string                    `json:"defaultClientId"`
 		BaseDotName       string                    `json:"baseDotName"`
 		DoHListen         listenCfg                 `json:"dohListen"`
+		PublicDoHListen   *listenCfg                `json:"publicDohListen"`
 		DoTListen         listenCfg                 `json:"dotListen"`
 		UDPListen         listenCfg                 `json:"udpListen"`
 		PublicDNSListen   listenCfg                 `json:"publicDnsListen"`
@@ -334,6 +340,7 @@ func loadConfig(path string) (*config, *runtime, error) {
 		DefaultClientID:   rawCfg.DefaultClientID,
 		BaseDotName:       rawCfg.BaseDotName,
 		DoHListen:         rawCfg.DoHListen,
+		PublicDoHListen:   rawCfg.PublicDoHListen,
 		DoTListen:         rawCfg.DoTListen,
 		UDPListen:         rawCfg.UDPListen,
 		PublicDNSListen:   rawCfg.PublicDNSListen,
@@ -1094,6 +1101,22 @@ type dohServer struct {
 	rt        *runtime
 	rt2       *config
 	defaultID string
+	// public marks the listener of the public edge. It answers with the
+	// public profile, while the local listener answers with the LAN edge.
+	public bool
+}
+
+// listenerProfile returns the profile of the listener that received the
+// request. The two listeners serve different edges, so the profile cannot be
+// taken from the configuration as a whole.
+func (d *dohServer) listenerProfile() string {
+	if d.public {
+		if c := currentConfig; c != nil && c.PublicDoHListen != nil && c.PublicDoHListen.Profile != "" {
+			return c.PublicDoHListen.Profile
+		}
+		return "public"
+	}
+	return currentConfig.DoHListen.Profile
 }
 
 func (d *dohServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -1177,7 +1200,7 @@ func (d *dohServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad dns query", http.StatusBadRequest)
 		return
 	}
-	ans, err := d.rt.resolve(query, clientID, "doh", requestClientIP(r), currentConfig.DoHListen.Profile)
+	ans, err := d.rt.resolve(query, clientID, "doh", requestClientIP(r), d.listenerProfile())
 	if err != nil {
 		log.Printf("doh error %s: %v", clientID, err)
 		http.Error(w, "client disabled or unknown", http.StatusForbidden)
@@ -1965,6 +1988,37 @@ func main() {
 			log.Printf("doh exit: %v", serveErr)
 		}
 	}()
+
+	// The public DoH listener of the edge. It is a second socket on purpose:
+	// the local listener stays on plain HTTP for the LAN and for the panel
+	// API, while the public one terminates TLS with the public certificate and
+	// expects the PROXY protocol header from the SNI router. The resolver must
+	// see the real client address here, otherwise every Internet client would
+	// share a single edge authorization.
+	if cfg.PublicDoHListen != nil && cfg.PublicDoHListen.Port > 0 {
+		pdh := &dohServer{rt: rt, defaultID: cfg.DefaultClientID, public: true}
+		phs := &http.Server{
+			Addr:    net.JoinHostPort(cfg.PublicDoHListen.Host, strconv.Itoa(cfg.PublicDoHListen.Port)),
+			Handler: pdh,
+		}
+		publicListener, err := net.Listen("tcp", phs.Addr)
+		if err != nil {
+			log.Fatalf("public doh setup error: %v", err)
+		}
+		publicListener = &proxyProtocolListener{Listener: publicListener}
+		go func() {
+			log.Printf("public DoH listening %s", phs.Addr)
+			if cfg.TLS.CertFile == "" || cfg.TLS.KeyFile == "" {
+				log.Printf("public DoH disabled: missing tls.certFile/tls.keyFile")
+				return
+			}
+			// ServeTLS loads the certificate and negotiates HTTP/2 through
+			// ALPN, which RFC 8484 requires from a DoH server.
+			if serveErr := phs.ServeTLS(publicListener, cfg.TLS.CertFile, cfg.TLS.KeyFile); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+				log.Printf("public doh exit: %v", serveErr)
+			}
+		}()
+	}
 
 	// DoT
 	if err := rt.listenDoT(cfg); err != nil {

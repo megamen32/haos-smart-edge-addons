@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "preferredCountry": "US",
+  "fallback": "healthy-tunnel",
+  "suffixes": [
+    "openai.com",
+    "chatgpt.com",
+    "oaistatic.com",
+    "oaiusercontent.com",
+    "oaistatsig.com",
+    "openaimerge.com",
+    "sora.com",
+    "gemini.google.com",
+    "generativelanguage.googleapis.com",
+    "aistudio.google.com"
+  ],
+  "domains": [
+    "cdn.workos.com",
+    "forwarder.workos.com",
+    "frontend-apps-multi-region.workos.com",
+    "images.workoscdn.com",
+    "setup.workos.com",
+    "workos.imgix.net"
+  ],
+  "probeUrl": "https://chatgpt.com/robots.txt",
+  "countryProbeUrl": "https://www.cloudflare.com/cdn-cgi/trace",
+  "probePortBase": 19080
+}

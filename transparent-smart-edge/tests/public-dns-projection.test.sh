@@ -60,22 +60,32 @@ off="$(project false "" "")"
 [[ "$(jq -r '.dohListen.host' <<<"$off")" == "127.0.0.1" ]]
 [[ "$(jq -r '.dohListen.port' <<<"$off")" == "18053" ]]
 [[ "$(jq -r '.dohListen.profile' <<<"$off")" == "local" ]]
+[[ "$(jq -r '.publicDoHListen' <<<"$off")" == "null" ]]
 [[ "$(jq -r '.dotListen' <<<"$off")" == "null" ]]
 [[ "$(jq -r '.publicDnsListen' <<<"$off")" == "null" ]]
 [[ "$(jq -r '.tls' <<<"$off")" == "null" ]]
+[[ "$(jq -r '.dohTls' <<<"$off")" == "null" ]]
+[[ "$(jq -r '.proxyProtocol' <<<"$off")" == "null" ]]
 [[ "$(jq -r '.udpListen.profile' <<<"$off")" == "local" ]]
 
 on="$(project true /data/certs/dns.pem /data/certs/dns.key)"
+# The local listener keeps the LAN profile and the panel API; the public edge
+# is a second listener with its own port and the public profile.
 [[ "$(jq -r '.dohListen.host' <<<"$on")" == "0.0.0.0" ]]
-[[ "$(jq -r '.dohListen.port' <<<"$on")" == "18054" ]]
-[[ "$(jq -r '.dohListen.profile' <<<"$on")" == "public" ]]
+[[ "$(jq -r '.dohListen.port' <<<"$on")" == "18053" ]]
+[[ "$(jq -r '.dohListen.profile' <<<"$on")" == "local" ]]
+[[ "$(jq -r '.publicDoHListen.host' <<<"$on")" == "0.0.0.0" ]]
+[[ "$(jq -r '.publicDoHListen.port' <<<"$on")" == "18054" ]]
+[[ "$(jq -r '.publicDoHListen.profile' <<<"$on")" == "public" ]]
 [[ "$(jq -r '.dotListen.port' <<<"$on")" == "18853" ]]
 [[ "$(jq -r '.dotListen.profile' <<<"$on")" == "public" ]]
 [[ "$(jq -r '.publicDnsListen.port' <<<"$on")" == "5354" ]]
 [[ "$(jq -r '.publicDnsListen.profile' <<<"$on")" == "public" ]]
 [[ "$(jq -r '.tls.certFile' <<<"$on")" == "/data/certs/dns.pem" ]]
-[[ "$(jq -r '.dohTls' <<<"$on")" == "true" ]]
-[[ "$(jq -r '.proxyProtocol' <<<"$on")" == "true" ]]
+# The public listener always terminates TLS and speaks the PROXY protocol on
+# its own, so the local listener must not carry those switches.
+[[ "$(jq -r '.dohTls' <<<"$on")" == "null" ]]
+[[ "$(jq -r '.proxyProtocol' <<<"$on")" == "null" ]]
 [[ "$(jq -r '.udpListen.profile' <<<"$on")" == "local" ]]
 [[ "$(jq -r '.edgeProfiles.public.ipv4' <<<"$on")" == "185.240.120.152" ]]
 [[ "$(jq -r '.edgeProfiles.local.ipv4' <<<"$on")" == "203.0.113.1" ]]

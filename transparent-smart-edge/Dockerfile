@@ -17,9 +17,10 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/smart-edge .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/route-probe ./cmd/route-probe
 
 # VLESS, TLS, WebSocket, HTTPUpgrade, and Reality are built into sing-box.
-# uTLS is needed by the imported regional groups; with_clash_api enables the
+# QUIC enables Hysteria 2; uTLS is needed by the imported regional groups.
+# with_clash_api enables the
 # loopback clash API that route-health.sh uses to steer the ai-route selector.
-RUN CGO_ENABLED=0 go install -trimpath -tags with_utls,with_clash_api \
+RUN CGO_ENABLED=0 go install -trimpath -tags with_utls,with_clash_api,with_quic \
       -ldflags "-X github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION} -s -w -buildid=" \
       "github.com/sagernet/sing-box/cmd/sing-box@v${SING_BOX_VERSION}" \
     && /go/bin/sing-box version | grep -F "sing-box version ${SING_BOX_VERSION}" \

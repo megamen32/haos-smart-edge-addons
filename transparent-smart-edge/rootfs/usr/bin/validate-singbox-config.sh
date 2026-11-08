@@ -54,13 +54,18 @@ if ! jq -e \
     '. as $root
      | def by_tag($wanted): [$root.outbounds[]? | select(.tag == $wanted)];
      def valid_leaf:
-       .type == "vless"
-       and ((.server | type) == "string" and (.server | length) > 0)
+       ((.server | type) == "string" and (.server | length) > 0)
        and ((.server_port | type) == "number" and .server_port > 0 and .server_port <= 65535)
-       and ((.uuid | type) == "string" and (.uuid | length) > 0)
        and .tls.enabled == true
-       and .tls.utls.enabled == true
-       and ((.transport.type == "ws") or (.transport.type == "httpupgrade") or (.tls.reality.enabled == true));
+       and (if .type == "vless" then
+              ((.uuid | type) == "string" and (.uuid | length) > 0)
+              and .tls.utls.enabled == true
+              and ((.transport.type == "ws") or (.transport.type == "httpupgrade") or (.tls.reality.enabled == true))
+            elif .type == "hysteria2" then
+              ((.password | type) == "string" and (.password | length) > 0)
+              and ((.tls.server_name | type) == "string" and (.tls.server_name | length) > 0)
+              and ((.tls.insecure // false) == false)
+            else false end);
      def valid_target($wanted):
        by_tag($wanted) as $matches
        | ($matches | length) == 1

@@ -1,0 +1,25 @@
+# Disposable, repository-owned pre-update canary. No host ports are exposed.
+# Use a verified image digest and one mode-0600 private config file.
+services:
+  hy2-canary:
+    image: ${VUSA_SMARTDNS_CANARY_IMAGE:?set a verified immutable image digest}
+    pull_policy: never
+    entrypoint: ["/usr/bin/sing-box"]
+    command: ["run", "-c", "/run/vusa-smartdns-canary.json"]
+    network_mode: bridge
+    read_only: true
+    restart: "no"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      vpn-panel.owner: "smartdns-vusa-20261108"
+      vpn-panel.purpose: "disposable-pre-update-canary"
+    volumes:
+      - type: bind
+        source: ${VUSA_SMARTDNS_CANARY_CONFIG_FILE:?set the private canary config path}
+        target: /run/vusa-smartdns-canary.json
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      disable: true
